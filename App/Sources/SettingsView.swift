@@ -1,10 +1,12 @@
 import SwiftUI
+import ServiceManagement
 import KeyboardShortcuts
 import MeetingNotesCore
 
 struct SettingsView: View {
     @Bindable var state: AppState
     @State private var newCategory = ""
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     // QuickNoteView only ever offers ⌘-digit shortcuts up to
     // CategoryHotkey.maxShortcutCount; keep the category list at or below
@@ -15,6 +17,20 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("General") {
+                Toggle("Launch at login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        do {
+                            if newValue {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            state.lastError = String(describing: error)
+                        }
+                    }
+            }
             Section("Shortcuts") {
                 KeyboardShortcuts.Recorder("Screenshot note:", name: .captureScreenshot)
                 KeyboardShortcuts.Recorder("Quick note:", name: .quickNote)

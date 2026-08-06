@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var state: AppState?          // assigned in MeetingNotesApp.init
@@ -7,6 +8,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let state = Self.state { BrowserWindowController.shared.show(state: state) }
+
+        // One-time self-registration as a login item. Only fires the first time
+        // the app ever launches (guarded by didAutoRegisterLoginItem) so that a
+        // user who later disables it in System Settings never gets re-enrolled.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "didAutoRegisterLoginItem") {
+            switch SMAppService.mainApp.status {
+            case .notRegistered, .notFound:
+                try? SMAppService.mainApp.register()
+            default:
+                break   // already enabled, or user has to approve/declined — leave as-is
+            }
+            defaults.set(true, forKey: "didAutoRegisterLoginItem")
+        }
 
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { event in
             guard let window = event.window,
