@@ -22,6 +22,8 @@ struct SessionBrowser: View {
     @State private var editingFolder: URL?
     @State private var editorHovered = false
     @State private var outsideClickMonitor: Any?
+    @State private var claudeTabFolders: Set<URL> = []
+    @State private var terminalRevision = 0
 
     enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All", pending = "Pending"
@@ -96,6 +98,7 @@ struct SessionBrowser: View {
             NSApp.activate(ignoringOtherApps: true)
             state.refresh()
             installOutsideClickMonitor()
+            ClaudeTerminalManager.shared.onChange = { terminalRevision &+= 1 }
         }
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
@@ -319,8 +322,48 @@ struct SessionBrowser: View {
     private func readableDetail(session: Session, folder: URL) -> some View {
         let categories = categoriesWithCounts(for: session)
         let notes = filteredNotes(session: session)
+        let manager = ClaudeTerminalManager.shared
+        let _ = terminalRevision   // refresh when runs start/end
+        let showClaude = manager.hasRun(folder) && claudeTabFolders.contains(folder)
         return VStack(alignment: .leading, spacing: 0) {
             header(session: session, folder: folder)
+            if manager.hasRun(folder) {
+                Picker("", selection: Binding(
+                    get: { showClaude },
+                    set: { wantClaude in
+                        if wantClaude { claudeTabFolders.insert(folder) }
+                        else { claudeTabFolders.remove(folder) }
+                    })) {
+                    Text("Notes").tag(false)
+                    Text("Claude").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+            }
+            if showClaude, let terminal = manager.terminal(for: folder) {
+                Divider()
+                TerminalHostView(terminal: terminal)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                HStack {
+                    if manager.isRunning(folder) {
+                        Label("Claude is working", systemImage: "circle.fill")
+                            .font(.caption).foregroundStyle(.green)
+                        Spacer()
+                        Button("Stop", role: .destructive) { confirmStopClaude(folder: folder) }
+                    } else {
+                        Label("Finished", systemImage: "checkmark.circle")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Clear") {
+                            manager.clear(folder: folder)
+                            claudeTabFolders.remove(folder)
+                        }
+                    }
+                }
+                .padding(8)
+            } else {
             if !categories.isEmpty {
                 categoryChipRow(categories)
                     .padding(.bottom, 8)
@@ -339,6 +382,19 @@ struct SessionBrowser: View {
                     .padding()
                 }
             }
+            }
+        }
+    }
+
+    private func confirmStopClaude(folder: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Stop Claude for this session?"
+        alert.informativeText = "The claude process will be terminated. Any clarifying questions it's waiting on won't be answered."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Stop")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            ClaudeTerminalManager.shared.stop(folder: folder)
         }
     }
 
@@ -450,11 +506,12 @@ struct SessionBrowser: View {
     }
 
     private func processWithClaude(session: Session, folder: URL) {
-        let started = ClaudeTerminalManager.shared.show(
-            for: folder,
-            sessionName: session.name,
+        let started = ClaudeTerminalManager.shared.start(
+            folder: folder,
             prompt: Self.processingPrompt(for: folder))
-        if !started {
+        if started {
+            claudeTabFolders.insert(folder)
+        } else {
             state.lastError = "Claude Code CLI not found — install it (https://claude.com/product/claude-code) or use Copy for Claude instead."
         }
     }

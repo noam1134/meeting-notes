@@ -1,7 +1,7 @@
 import XCTest
 @testable import MeetingNotes
 
-// Covers `ClaudeTerminalWindowController.shellQuote(_:)`, the helper that
+// Covers `ClaudeTerminalManager.shellQuote(_:)`, the helper that
 // embeds the (Claude-authored, arbitrary-content) processing prompt into the
 // `/bin/zsh -l -c "claude '<prompt>'"` command line. The prompt is known to
 // contain single quotes (e.g. "I've confirmed") and double quotes (the
@@ -12,7 +12,7 @@ import XCTest
 // with our escaping, rather than just eyeballing the algorithm.
 final class ClaudeTerminalCommandTests: XCTestCase {
     private func roundTrip(_ original: String) throws -> String {
-        let quoted = ClaudeTerminalWindowController.shellQuote(original)
+        let quoted = ClaudeTerminalManager.shellQuote(original)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", "printf '%s' \(quoted)"]
