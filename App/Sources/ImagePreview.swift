@@ -3,6 +3,11 @@ import SwiftUI
 // Full-size screenshot viewer presented as a sheet from a note card thumbnail.
 // Pinch (MagnificationGesture) zooms; ScrollView pans when zoomed past the
 // window bounds. Esc or the close button dismisses.
+//
+// The zoomed content's frame is sized to `image.size * scale` (not
+// `.scaleEffect`, which is a render-only transform that leaves the
+// ScrollView's layout-computed content bounds at the pre-scale size, making
+// the overflow unreachable by panning).
 struct ImagePreview: View {
     let image: NSImage
     var dismiss: () -> Void
@@ -18,8 +23,7 @@ struct ImagePreview: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: image.size.width, height: image.size.height)
-                    .scaleEffect(scale)
+                    .frame(width: image.size.width * scale, height: image.size.height * scale)
             }
             .gesture(
                 MagnificationGesture()
