@@ -201,7 +201,6 @@ struct SessionBrowser: View {
             }
         }
         .padding(.vertical, 2)
-        .contentShape(Rectangle())
         .onTapGesture(count: 2) { startRename(session: session, folder: folder) }
         .contextMenu { sessionContextMenu(session: session, folder: folder) }
     }
