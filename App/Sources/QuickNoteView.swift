@@ -6,7 +6,6 @@ struct QuickNoteView: View {
     let dismiss: () -> Void
     @State private var text = ""
     @State private var category: String
-    @FocusState private var focused: Bool
 
     init(state: AppState, dismiss: @escaping () -> Void) {
         self.state = state
@@ -20,39 +19,10 @@ struct QuickNoteView: View {
                 Label("No active meeting — ⏎ starts one now", systemImage: "record.circle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            TextField("Quick note…", text: $text)
-                .textFieldStyle(.plain).font(.title3)
-                .focused($focused)
-                .onSubmit(save)
-            HStack(spacing: 6) {
-                ForEach(Array(state.settings.categories.enumerated()), id: \.element) { i, cat in
-                    let isSelected = category == cat
-                    let button = Button {
-                        category = cat
-                    } label: {
-                        Text("\(i + 1) \(cat)")
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(isSelected ? categoryColor(cat, categories: state.settings.categories) : Color.clear,
-                                        in: Capsule())
-                            .foregroundStyle(isSelected ? .white : .secondary)
-                            .overlay(Capsule().stroke(isSelected ? Color.clear : Color.secondary.opacity(0.4)))
-                    }
-                    .buttonStyle(.plain)
-                    // CategoryHotkey.digitCharacter is nil for a 10th+ category
-                    // (index >= 9); ⌘-digit shortcuts only span 1-9, and the
-                    // unguarded Character("\(i + 1)") this replaces traps at
-                    // runtime once i reaches 9 ("10" is not a single character).
-                    if let digit = CategoryHotkey.digitCharacter(forIndex: i) {
-                        button.keyboardShortcut(KeyEquivalent(digit), modifiers: [.command])
-                    } else {
-                        button
-                    }
-                }
-            }.font(.caption)
+            NoteComposer(text: $text, category: $category, categories: state.settings.categories, onSubmit: save)
         }
         .padding(14)
         .frame(width: 480)
-        .onAppear { focused = true }
         .onExitCommand(perform: dismiss)   // Esc
     }
 

@@ -50,7 +50,10 @@ enum CaptureController {
 
     static func presentCaptureWindow(image: CGImage, state: AppState) {
         let displayWidth: CGFloat = 640 + 28
-        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 160 + 80
+        // Bottom section, top to bottom: toolbar (~40) + image (scaled) +
+        // NoteComposer (text field ~96 + chip row ~28 + spacing, ~150) +
+        // VStack spacing (2 gaps * 10) + outer padding (2 * 14).
+        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 40 + 150 + 20 + 28
         let panel = FloatingPanel(
             view: CaptureNoteView(image: image, state: state, dismiss: {
                 capturePanel?.close()

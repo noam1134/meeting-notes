@@ -12,7 +12,6 @@ struct CaptureNoteView: View {
     @State private var textLabel = ""
     @State private var note = ""
     @State private var category: String
-    @FocusState private var noteFocused: Bool
 
     private let displayWidth: CGFloat = 640
     private var displaySize: CGSize {
@@ -49,28 +48,11 @@ struct CaptureNoteView: View {
 
             canvas
 
-            TextField("Note…", text: $note, axis: .vertical)
-                .lineLimit(4...10)
-                .textFieldStyle(.roundedBorder)
-                .frame(minHeight: 96, alignment: .top)
-                .focused($noteFocused)
-                .onSubmit(save)
-
-            HStack {
-                Circle()
-                    .fill(categoryColor(category, categories: state.settings.categories))
-                    .frame(width: 10, height: 10)
-                Picker("Category", selection: $category) {
-                    ForEach(state.settings.categories, id: \.self) { Text($0) }
-                }
-                .frame(width: 240)
-                Spacer()
-                Button("Cancel", action: dismiss).keyboardShortcut(.cancelAction)
-                Button("Save", action: save).keyboardShortcut(.defaultAction)
-            }
+            NoteComposer(text: $note, category: $category, categories: state.settings.categories, onSubmit: save)
         }
         .padding(14)
         .frame(width: displayWidth + 28)
+        .onExitCommand(perform: dismiss)   // Esc
     }
 
     private var canvas: some View {

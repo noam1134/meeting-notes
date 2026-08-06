@@ -59,12 +59,14 @@ enum AnnotationRenderer {
                 CTLineDraw(line, ctx)
             case .pen:
                 guard shape.points.count >= 2 else { continue }
+                ctx.saveGState()
                 ctx.setLineJoin(.round)
                 ctx.setLineCap(.round)
                 let pts = shape.points.map(pt)
                 ctx.move(to: pts[0])
                 for p in pts.dropFirst() { ctx.addLine(to: p) }
                 ctx.strokePath()
+                ctx.restoreGState()
             }
         }
         guard let out = ctx.makeImage() else { return nil }
