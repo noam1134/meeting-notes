@@ -1,19 +1,53 @@
 import AppKit
 import SwiftTerm
 
-/// Hosts a single `claude <prompt>` run in an embedded terminal window,
-/// following the `BrowserWindowController` pattern (a shared, lazily-created
-/// window). Claude Code's CLI makes heavy interactive use of the Esc key
-/// (canceling actions, dismissing suggestions); `TerminalView.doCommand(by:)`
-/// intercepts `cancelOperation(_:)` itself and forwards the raw ESC byte to
-/// the child process rather than letting it bubble to the window's responder
-/// chain, so Esc can never reach a window-level "close" handler while the
-/// terminal has focus — wiring one there would fight the CLI, not protect
-/// against it (verified against the actually-resolved SwiftTerm 1.15.0
-/// checkout, not just the `from: 1.2.0` pin). The "guard against accidental
-/// close while running" ask is implemented via `windowShouldClose(_:)`
-/// instead, which covers the actual close vectors for this window (red
-/// button, Cmd+W): confirming "Close Anyway" there terminates the process
+/// Registry of open Claude terminal windows, one per session folder, so
+/// multiple sessions can each have a "Process with Claude" run active at the
+/// same time. `SessionBrowser` talks to this instead of holding a reference
+/// to a single shared `ClaudeTerminalWindowController` (P2's design, which
+/// only ever allowed one terminal window app-wide) — each folder now gets
+/// its own `ClaudeTerminalWindowController` instance, keyed by folder `URL`
+/// so re-processing the same session never spawns a second `claude` for it.
+@MainActor
+final class ClaudeTerminalManager {
+    static let shared = ClaudeTerminalManager()
+
+    private var terminals: [URL: ClaudeTerminalWindowController] = [:]
+
+    /// Opens (or brings forward) the terminal window for `folder`. If a
+    /// terminal for this folder already exists and its process is still
+    /// alive, just brings that window forward — never spawns a second
+    /// `claude` process for the same session. Otherwise spawns a fresh
+    /// terminal window titled `sessionName`. Returns `false` (no window
+    /// shown) if the `claude` CLI can't be found on the user's PATH — the
+    /// caller is expected to surface that via `state.lastError`.
+    @discardableResult
+    func show(for folder: URL, sessionName: String, prompt: String) -> Bool {
+        let controller = terminals[folder] ?? ClaudeTerminalWindowController()
+        guard controller.run(sessionName: sessionName, prompt: prompt) else { return false }
+        // (Re)wire the cleanup hook every call — idempotent, and covers the
+        // freshly-created-controller case without a second branch.
+        controller.onWindowClosed = { [weak self] in
+            self?.terminals.removeValue(forKey: folder)
+        }
+        terminals[folder] = controller
+        return true
+    }
+}
+
+/// Hosts a single `claude <prompt>` run in an embedded terminal window, one
+/// instance per session folder (see `ClaudeTerminalManager` above). Claude
+/// Code's CLI makes heavy interactive use of the Esc key (canceling actions,
+/// dismissing suggestions); `TerminalView.doCommand(by:)` intercepts
+/// `cancelOperation(_:)` itself and forwards the raw ESC byte to the child
+/// process rather than letting it bubble to the window's responder chain, so
+/// Esc can never reach a window-level "close" handler while the terminal has
+/// focus — wiring one there would fight the CLI, not protect against it
+/// (verified against the actually-resolved SwiftTerm 1.15.0 checkout, not
+/// just the `from: 1.2.0` pin). The "guard against accidental close while
+/// running" ask is implemented via `windowShouldClose(_:)` instead, which
+/// covers the actual close vectors for this window (red button, Cmd+W):
+/// confirming "Close & Stop" there terminates the process
 /// (`LocalProcess.terminate()`, public since SwiftTerm's `process` property
 /// was exposed after 1.2.0) so closing the window and stopping the run are
 /// the same action — no orphaned background process, and `isProcessRunning`
@@ -34,11 +68,23 @@ import SwiftTerm
 /// `ClaudeTerminalLifecycleTests` for the covering tests.
 @MainActor
 final class ClaudeTerminalWindowController: NSObject {
-    static let shared = ClaudeTerminalWindowController()
+    /// Windows cascade from one shared origin (Apple's standard
+    /// `NSWindow.cascadeTopLeft(from:)` pattern) so that when several
+    /// sessions' terminals are open at once their windows step diagonally
+    /// instead of stacking exactly on top of each other. Shared across all
+    /// controller instances (one per open session) so the cascade continues
+    /// across sessions rather than restarting per-folder.
+    private static var cascadeOrigin = NSPoint.zero
 
     private var window: NSWindow?
     private var terminalView: LocalProcessTerminalView?
     private var runState = TerminalRunState()
+    private var sessionName = ""
+
+    /// Called once this controller's window has actually closed (whether
+    /// because the process exited or the user confirmed "Close & Stop") so
+    /// `ClaudeTerminalManager` can drop it from its registry.
+    var onWindowClosed: (() -> Void)?
 
     /// Opens the terminal window and runs `claude <prompt>` for the given session.
     /// Returns `false` (and shows no window) if the `claude` CLI can't be found on
@@ -69,6 +115,8 @@ final class ClaudeTerminalWindowController: NSObject {
     }
 
     private func spawnProcess(sessionName: String, prompt: String) -> Bool {
+        self.sessionName = sessionName
+
         let frame = NSRect(x: 0, y: 0, width: 720, height: 440)
         let view = LocalProcessTerminalView(frame: frame)
         view.processDelegate = self
@@ -81,10 +129,15 @@ final class ClaudeTerminalWindowController: NSObject {
         win.contentView = view
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.center()
+        Self.cascadeOrigin = win.cascadeTopLeft(from: Self.cascadeOrigin)
         window = win
 
-        let command = "claude \(Self.shellQuote(prompt))"
+        // `acceptEdits` auto-approves file edits, and the Trello MCP tools are
+        // scoped in via `--allowedTools` per the user-confirmed pipeline design
+        // (see task brief) — everything else (e.g. other MCP servers) still
+        // prompts normally. Clarifying questions are conversation, not tool
+        // calls, so they're unaffected by either flag.
+        let command = "claude --permission-mode acceptEdits --allowedTools \"mcp__trello__*\" \(Self.shellQuote(prompt))"
         runState.didSpawn()
         view.startProcess(executable: "/bin/zsh", args: ["-l", "-c", command])
 
@@ -147,7 +200,7 @@ extension ClaudeTerminalWindowController: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard runState.isProcessRunning else { return true }
         let alert = NSAlert()
-        alert.messageText = "Claude is still running"
+        alert.messageText = "Claude is still working on '\(sessionName)' — close anyway?"
         alert.informativeText = "Closing will stop the Claude process. Any clarifying questions it's waiting on won't be answered."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Close & Stop")
@@ -169,6 +222,7 @@ extension ClaudeTerminalWindowController: NSWindowDelegate {
         runState.windowDidClose()
         window = nil
         terminalView = nil
+        onWindowClosed?()
     }
 }
 

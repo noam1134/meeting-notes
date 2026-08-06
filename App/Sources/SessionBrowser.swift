@@ -441,7 +441,8 @@ struct SessionBrowser: View {
     }
 
     private func processWithClaude(session: Session, folder: URL) {
-        let started = ClaudeTerminalWindowController.shared.run(
+        let started = ClaudeTerminalManager.shared.show(
+            for: folder,
             sessionName: session.name,
             prompt: Self.processingPrompt(for: folder))
         if !started {
