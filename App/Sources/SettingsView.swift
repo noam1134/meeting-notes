@@ -52,7 +52,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 360)
+        .scrollDisabled(true)   // window sizes to content instead of scrolling
+        .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             // Front the window — the app is normally .accessory (no dock icon).
             NSApp.activate(ignoringOtherApps: true)
