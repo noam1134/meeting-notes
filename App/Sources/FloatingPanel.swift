@@ -16,6 +16,7 @@ final class FloatingPanel: NSPanel {
         // mechanism — a bare NSHostingView contentView never resizes the panel.
         let host = NSHostingController(rootView: view)
         host.sizingOptions = .preferredContentSize
+        host.safeAreaRegions = []   // hidden titlebar must not inset the content
         contentViewController = host
         let fit = host.sizeThatFits(in: NSSize(width: width, height: 2000))
         setContentSize(NSSize(width: width, height: max(fit.height, 40)))
