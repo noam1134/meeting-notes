@@ -42,7 +42,7 @@ struct MeetingNotesApp: App {
                 quickNotePanel?.close()
                 quickNotePanel = nil
             }),
-            width: 480, height: 150)
+            width: 480)
         quickNotePanel = panel
         panel.show()
     }

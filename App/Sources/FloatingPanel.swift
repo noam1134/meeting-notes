@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
-    init<V: View>(view: V, width: CGFloat, height: CGFloat, movableByBackground: Bool = true) {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+    init<V: View>(view: V, width: CGFloat, movableByBackground: Bool = true) {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: 0),
                    styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
@@ -12,7 +12,12 @@ final class FloatingPanel: NSPanel {
         titlebarAppearsTransparent = true
         isMovableByWindowBackground = movableByBackground
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view)
+        contentView = hostingView
+        hostingView.sizingOptions = .preferredContentSize
+        standardWindowButton(.closeButton)?.isHidden = true
+        standardWindowButton(.miniaturizeButton)?.isHidden = true
+        standardWindowButton(.zoomButton)?.isHidden = true
     }
 
     override var canBecomeKey: Bool { true }

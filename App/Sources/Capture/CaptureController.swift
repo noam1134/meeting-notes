@@ -57,15 +57,12 @@ enum CaptureController {
                         1.0)
         let displaySize = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
         let width = max(displaySize.width + 28, 480)
-        // Chrome: toolbar (~40) + single-line NoteComposer + chip row +
-        // VStack spacing + outer padding, ~130 total.
-        let height = displaySize.height + 130
         let panel = FloatingPanel(
             view: CaptureNoteView(image: image, state: state, dismiss: {
                 capturePanel?.close()
                 capturePanel = nil
             }),
-            width: width, height: height, movableByBackground: false)
+            width: width, movableByBackground: false)
         capturePanel = panel
         panel.show()
     }
