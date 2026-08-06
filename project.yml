@@ -30,3 +30,26 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
         DEVELOPMENT_TEAM: X74V85W2JX
+  MeetingNotesTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - App/Tests
+    dependencies:
+      - target: MeetingNotes
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: X74V85W2JX
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  MeetingNotes:
+    build:
+      targets:
+        MeetingNotes: all
+        MeetingNotesTests: [test]
+    test:
+      targets:
+        - MeetingNotesTests
