@@ -3,6 +3,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var state: AppState?          // assigned in MeetingNotesApp.init
     private var rightClickMonitor: Any?
+    private var shiftReturnMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let state = Self.state { BrowserWindowController.shared.show(state: state) }
@@ -16,6 +17,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let button else { return event }
             button.performClick(nil)
             return nil   // swallow the right-click
+        }
+
+        shiftReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            guard event.keyCode == 36,                                   // Return
+                  event.modifierFlags.contains(.shift),
+                  !event.modifierFlags.contains(.command),
+                  NSApp.keyWindow?.firstResponder is NSTextView          // field editor active
+            else { return event }
+            // Re-post as Option+Return: text fields insert a newline at the caret for it.
+            return NSEvent.keyEvent(with: .keyDown,
+                                    location: event.locationInWindow,
+                                    modifierFlags: event.modifierFlags.subtracting(.shift).union(.option),
+                                    timestamp: event.timestamp,
+                                    windowNumber: event.windowNumber,
+                                    context: nil,
+                                    characters: "\n",
+                                    charactersIgnoringModifiers: "\n",
+                                    isARepeat: event.isARepeat,
+                                    keyCode: 36) ?? event
         }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication,
