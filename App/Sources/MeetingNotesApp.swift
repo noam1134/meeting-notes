@@ -2,8 +2,21 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var state: AppState?          // assigned in MeetingNotesApp.init
+    private var rightClickMonitor: Any?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let state = Self.state { BrowserWindowController.shared.show(state: state) }
+
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { event in
+            guard let window = event.window,
+                  window.className.contains("StatusBarWindow") else { return event }
+            let button = (window.contentView as? NSStatusBarButton)
+                ?? window.contentView?.subviews.compactMap { $0 as? NSStatusBarButton }.first
+                ?? window.contentView?.subviews.flatMap(\.subviews).compactMap { $0 as? NSStatusBarButton }.first
+            guard let button else { return event }
+            button.performClick(nil)
+            return nil   // swallow the right-click
+        }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
