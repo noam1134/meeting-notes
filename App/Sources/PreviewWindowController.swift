@@ -9,9 +9,14 @@ final class PreviewWindowController {
     func show(image: NSImage) {
         panel?.close()
         let p = AutoClosePanel(contentRect: .zero,
-                               styleMask: [.titled, .closable, .resizable, .utilityWindow],
+                               styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow],
                                backing: .buffered, defer: false)
-        p.title = "Screenshot"
+        p.titleVisibility = .hidden
+        p.titlebarAppearsTransparent = true
+        for buttonType: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+            p.standardWindowButton(buttonType)?.isHidden = true
+        }
+        p.isMovableByWindowBackground = true
         p.isFloatingPanel = true
         p.isReleasedWhenClosed = false
         let host = NSHostingController(rootView: ImagePreview(image: image) { [weak p] in p?.close() })
