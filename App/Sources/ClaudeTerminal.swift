@@ -22,13 +22,23 @@ import SwiftTerm
 /// declared `weak` in the resolved 1.15.0 dependency (not `unowned` as in
 /// 1.2.0), so there's no dangling-pointer risk to guard against by keeping
 /// `terminalView` alive off-screen.
+///
+/// The window/process lifecycle rules above (who terminates what, when the
+/// wedge state is prevented, when refs get cleared) are extracted into
+/// `TerminalRunState`, a plain value type with no AppKit/Process dependency,
+/// specifically so they can be unit-tested headlessly — this controller
+/// itself has no headless test harness (real `NSWindow`/`NSAlert`/`Process`),
+/// and this is a Claude Code dev machine, so `claude` is actually on `PATH`:
+/// exercising the controller's `run()` directly in a test would spawn a
+/// real, possibly-interactive `claude` subprocess. See
+/// `ClaudeTerminalLifecycleTests` for the covering tests.
 @MainActor
 final class ClaudeTerminalWindowController: NSObject {
     static let shared = ClaudeTerminalWindowController()
 
     private var window: NSWindow?
     private var terminalView: LocalProcessTerminalView?
-    private var isProcessRunning = false
+    private var runState = TerminalRunState()
 
     /// Opens the terminal window and runs `claude <prompt>` for the given session.
     /// Returns `false` (and shows no window) if the `claude` CLI can't be found on
@@ -37,27 +47,25 @@ final class ClaudeTerminalWindowController: NSObject {
     func run(sessionName: String, prompt: String) -> Bool {
         guard Self.claudeIsAvailable() else { return false }
 
-        if isProcessRunning {
-            // A claude process is already in flight — never spawn a second one
-            // on top of it. windowShouldClose/windowWillClose guarantee `window`
-            // is non-nil whenever `isProcessRunning` is true (confirming "Close
-            // Anyway" terminates the process and clears both together, in that
-            // order), so the normal case is just bringing that window forward.
-            guard let window else {
-                // Invariant violated (shouldn't happen — see above). Fail open
-                // instead of silently no-oping: drop the stale process and let
-                // the caller get a fresh session rather than a dead button.
-                terminalView?.process.terminate()
-                terminalView = nil
-                isProcessRunning = false
-                return spawnProcess(sessionName: sessionName, prompt: prompt)
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            return true
-        }
+        switch runState.run() {
+        case .spawnFresh:
+            return spawnProcess(sessionName: sessionName, prompt: prompt)
 
-        return spawnProcess(sessionName: sessionName, prompt: prompt)
+        case .bringExistingWindowForward:
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
+            return true
+
+        case .recoverAndSpawnFresh:
+            // Invariant violated (shouldn't happen — `runState` is designed so
+            // this can't be reached through its normal transitions). Fail open
+            // instead of silently no-oping: drop the stale process and let the
+            // caller get a fresh session rather than a dead button.
+            terminalView?.process.terminate()
+            terminalView = nil
+            window = nil
+            return spawnProcess(sessionName: sessionName, prompt: prompt)
+        }
     }
 
     private func spawnProcess(sessionName: String, prompt: String) -> Bool {
@@ -77,7 +85,7 @@ final class ClaudeTerminalWindowController: NSObject {
         window = win
 
         let command = "claude \(Self.shellQuote(prompt))"
-        isProcessRunning = true
+        runState.didSpawn()
         view.startProcess(executable: "/bin/zsh", args: ["-l", "-c", command])
 
         NSApp.activate(ignoringOtherApps: true)
@@ -122,9 +130,8 @@ extension ClaudeTerminalWindowController: LocalProcessTerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
-        isProcessRunning = false
-        if let window {
-            window.close()   // windowShouldClose now passes (not running) -> windowWillClose clears both refs
+        if runState.processDidTerminate() {
+            window?.close()   // windowShouldClose now passes (not running) -> windowWillClose clears both refs
         } else {
             // Shouldn't happen: `windowShouldClose` terminates the process (and
             // cancels its exit-monitor) before ever letting `window` become nil
@@ -138,7 +145,7 @@ extension ClaudeTerminalWindowController: LocalProcessTerminalViewDelegate {
 
 extension ClaudeTerminalWindowController: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard isProcessRunning else { return true }
+        guard runState.isProcessRunning else { return true }
         let alert = NSAlert()
         alert.messageText = "Claude is still running"
         alert.informativeText = "Closing will stop the Claude process. Any clarifying questions it's waiting on won't be answered."
@@ -150,15 +157,108 @@ extension ClaudeTerminalWindowController: NSWindowDelegate {
         // headless, with nothing left to answer its clarifying questions.
         // `LocalProcess.terminate()` cancels its exit-monitor as part of
         // stopping, so `processTerminated` below will not fire for this run —
-        // mark it not-running here so the next `run()` call starts fresh
-        // instead of finding a dead end.
-        terminalView?.process.terminate()
-        isProcessRunning = false
+        // `runState.confirmedClose()` marks it not-running here so the next
+        // `run()` call starts fresh instead of finding a dead end.
+        if runState.confirmedClose() {
+            terminalView?.process.terminate()
+        }
         return true
     }
 
     func windowWillClose(_ notification: Notification) {
+        runState.windowDidClose()
         window = nil
         terminalView = nil
+    }
+}
+
+/// Pure state machine for `ClaudeTerminalWindowController`'s window/process
+/// lifecycle — no AppKit, no `Process`, no singletons, so it can be
+/// constructed and exercised directly in a unit test. It owns exactly the
+/// two booleans the controller used to track inline (`isProcessRunning`,
+/// and whether a window is currently open) and the transition rules that
+/// were fixed in commit `5bac503`:
+///
+/// - Finding 1 (critical): `run()`'s `.recoverAndSpawnFresh` case, and the
+///   fact that `windowDidClose()` always clears `isProcessRunning` too,
+///   together make `isProcessRunning == true && hasWindow == false` (the
+///   wedge state) unreachable through this type's own transitions — see
+///   `ClaudeTerminalLifecycleTests.testCloseAnywayThenRunAgain_...` for a
+///   test that reproduces the exact scenario finding 1 described and
+///   confirms it now recovers.
+/// - Finding 2 (important): `windowDidClose()` (called from
+///   `windowWillClose`) unconditionally clears both flags — there is no
+///   longer a "keep the process alive because the window closed" special
+///   case, matching the confirmed-correct premise that `LocalProcess`'s
+///   delegate reference is `weak` in the resolved SwiftTerm version.
+struct TerminalRunState: Equatable {
+    private(set) var isProcessRunning: Bool
+    private(set) var hasWindow: Bool
+
+    /// The `hasWindow: true, isProcessRunning: true` default-adjacent cases
+    /// below are for tests that need to seed a specific state directly
+    /// (including the "invariant violated" wedge state, which production
+    /// code can only ever reach via `run()`'s already-defensive branch —
+    /// never via `didSpawn()`/`confirmedClose()`/`windowDidClose()`
+    /// themselves). Production code always starts from `TerminalRunState()`.
+    init(isProcessRunning: Bool = false, hasWindow: Bool = false) {
+        self.isProcessRunning = isProcessRunning
+        self.hasWindow = hasWindow
+    }
+
+    enum RunAction: Equatable {
+        /// No process in flight — spawn one.
+        case spawnFresh
+        /// A process is already running and its window is still open —
+        /// just bring that window forward.
+        case bringExistingWindowForward
+        /// `isProcessRunning` was true but `hasWindow` was false — the
+        /// invariant the other transitions maintain was violated somehow.
+        /// Recover by treating it as idle instead of silently no-oping.
+        case recoverAndSpawnFresh
+    }
+
+    /// Called at the top of `run()`, before any window/process is touched.
+    mutating func run() -> RunAction {
+        guard isProcessRunning else { return .spawnFresh }
+        guard hasWindow else {
+            isProcessRunning = false
+            return .recoverAndSpawnFresh
+        }
+        return .bringExistingWindowForward
+    }
+
+    /// Called once a new process + window have actually been created.
+    mutating func didSpawn() {
+        isProcessRunning = true
+        hasWindow = true
+    }
+
+    /// `windowShouldClose(_:)`, after the user confirms "Close & Stop" (a
+    /// no-op returning `false` if no process was running to confirm about,
+    /// since `windowShouldClose` only shows that alert while one is).
+    /// Returns whether the caller must call `process.terminate()`.
+    @discardableResult
+    mutating func confirmedClose() -> Bool {
+        guard isProcessRunning else { return false }
+        isProcessRunning = false
+        return true
+    }
+
+    /// `windowWillClose(_:)` — unconditionally clears both flags. This IS
+    /// finding 2's fix: no more special-casing to keep the process/view
+    /// alive off-screen when a window closes while a process is (or was
+    /// merely thought to be) still running.
+    mutating func windowDidClose() {
+        hasWindow = false
+        isProcessRunning = false
+    }
+
+    /// `processTerminated` delegate callback. Returns whether the caller
+    /// should call `window.close()` (only if a window is still open).
+    @discardableResult
+    mutating func processDidTerminate() -> Bool {
+        isProcessRunning = false
+        return hasWindow
     }
 }
