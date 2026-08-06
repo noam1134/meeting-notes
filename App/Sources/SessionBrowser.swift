@@ -64,8 +64,18 @@ struct SessionBrowser: View {
                 .frame(width: 160)
             }
         }
-        .sheet(item: $previewImage) { wrapper in
-            ImagePreview(image: wrapper.image) { previewImage = nil }
+        .overlay {
+            if let wrapper = previewImage {
+                ZStack {
+                    Color.black.opacity(0.45)
+                        .ignoresSafeArea()
+                        .onTapGesture { previewImage = nil }
+                    ImagePreview(image: wrapper.image) { previewImage = nil }
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .shadow(radius: 24)
+                }
+                .onExitCommand { previewImage = nil }
+            }
         }
         .confirmationDialog(
             "Move '\(sessionDeleteTarget?.name ?? "")' to Trash? Claude-created Trello cards are unaffected.",
