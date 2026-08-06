@@ -588,7 +588,7 @@ struct SessionBrowser: View {
             editingNoteID = nil
             return
         }
-        let text = editText
+        let text = trimmed
         let category = editCategory
         state.updateNote(id: id, in: folder) { note in
             note.text = text
