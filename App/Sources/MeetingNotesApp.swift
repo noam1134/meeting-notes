@@ -30,11 +30,20 @@ struct MeetingNotesApp: App {
         .defaultSize(width: 920, height: 640)
     }
 
+    private static var quickNotePanel: FloatingPanel?
+
     private static func showQuickNote(state: AppState) {
-        var panel: FloatingPanel!
-        panel = FloatingPanel(
-            view: QuickNoteView(state: state, dismiss: { panel.close() }),
+        if let existing = quickNotePanel, existing.isVisible {
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+        let panel = FloatingPanel(
+            view: QuickNoteView(state: state, dismiss: {
+                quickNotePanel?.close()
+                quickNotePanel = nil
+            }),
             width: 480, height: 120)
+        quickNotePanel = panel
         panel.show()
     }
 }

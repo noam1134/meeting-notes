@@ -4,8 +4,12 @@ import SwiftUI
 @MainActor
 enum CaptureController {
     private static var regionWindow: RegionSelectWindow?
+    private static var capturePanel: FloatingPanel?
 
     static func begin(state: AppState) {
+        // Re-entrancy guard: a region-select window or capture note panel is
+        // already open, so ignore this ⌃⇧S press rather than opening a second.
+        guard regionWindow == nil, capturePanel == nil else { return }
         guard ScreenCapturer.hasPermission() else {
             showPermissionExplainer()
             return
@@ -27,12 +31,15 @@ enum CaptureController {
     }
 
     static func presentCaptureWindow(image: CGImage, state: AppState) {
-        var panel: FloatingPanel!
         let displayWidth: CGFloat = 640 + 28
         let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 160
-        panel = FloatingPanel(
-            view: CaptureNoteView(image: image, state: state, dismiss: { panel.close() }),
+        let panel = FloatingPanel(
+            view: CaptureNoteView(image: image, state: state, dismiss: {
+                capturePanel?.close()
+                capturePanel = nil
+            }),
             width: displayWidth, height: height)
+        capturePanel = panel
         panel.show()
     }
 
