@@ -44,6 +44,11 @@ struct CaptureNoteView: View {
                 Button("Undo") { _ = shapes.popLast() }
                     .disabled(shapes.isEmpty)
                     .keyboardShortcut("z")
+                Button(action: copyToClipboard) {
+                    Image(systemName: "doc.on.doc")
+                }
+                .help("Copy screenshot (⌘C)")
+                .keyboardShortcut("c")
             }
 
             canvas
@@ -139,6 +144,18 @@ struct CaptureNoteView: View {
         }
         if state.activeSession == nil { state.startMeeting(named: nil) }
         state.addNote(text: note, category: category, imageData: png)
+        dismiss()
+    }
+
+    private func copyToClipboard() {
+        guard let png = AnnotationRenderer.flatten(image: image, shapes: shapes,
+                                                   viewSize: displaySize) else {
+            state.lastError = "Failed to render annotated screenshot"
+            return
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(png, forType: .png)
         dismiss()
     }
 }
