@@ -38,6 +38,10 @@ final class AppState {
         run { try self.store.addNote(text: text, category: category, imageData: imageData) }
     }
 
+    func addNote(text: String, category: String, to folder: URL) {
+        run { try self.store.addNote(text: text, category: category, imageData: nil, to: folder) }
+    }
+
     private func run(_ body: () throws -> Void) {
         do {
             try body()
