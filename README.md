@@ -16,9 +16,11 @@ hotkeys; Claude Code processes sessions into Trello cards afterward.
 Open Claude Code and say e.g. "process today's meeting notes". Claude should:
 
 1. Read `~/Documents/MeetingNotes/<newest pending folder>/session.json` + PNGs.
-2. Expand each note (screenshots give context), create Trello cards via the
+2. Ask the user clarifying questions about ambiguous notes BEFORE creating
+   any Trello card.
+3. Expand each note (screenshots give context), create Trello cards via the
    Trello MCP for notes categorized `Trello task`.
-3. Set each handled note's `status` to `"processed"`, and the session's
+4. Set each handled note's `status` to `"processed"`, and the session's
    `status` to `"processed"` when done. Keep the JSON schema intact.
 
 ## Build
