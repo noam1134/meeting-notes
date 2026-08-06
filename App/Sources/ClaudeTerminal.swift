@@ -54,7 +54,7 @@ final class ClaudeTerminalManager {
         // launch (and it queues through the one-time trust dialog).
         // cwd is the sessions ROOT so trust is accepted once, not per session.
         let root = folder.deletingLastPathComponent()
-        let command = "cd \(Self.shellQuote(root.path)) && claude \(Self.shellQuote(prompt)) --permission-mode acceptEdits --allowedTools \"mcp__trello__*\""
+        let command = "cd \(Self.shellQuote(root.path)) && claude \(Self.shellQuote(prompt)) --dangerously-skip-permissions"
 
         // SwiftTerm's default PTY environment omits HOME/PATH, so `zsh -l`
         // couldn't source the user's profile and `claude` was never found —

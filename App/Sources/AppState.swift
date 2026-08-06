@@ -9,6 +9,7 @@ final class AppState {
     var sessions: [SessionListItem] = []
     var settings: AppSettings
     var lastError: String?
+    private var watcher: FolderWatcher?
 
     // Sessions that have ended but not yet been processed — drives the menu
     // bar badge and the morning-reminder notification.
@@ -30,7 +31,11 @@ final class AppState {
             .appendingPathComponent("Documents/MeetingNotes"))) {
         self.store = store
         self.settings = AppSettings.load()
+        try? FileManager.default.createDirectory(at: store.rootURL, withIntermediateDirectories: true)
         refresh()
+        // Embedded Claude runs edit session.json while the app stays active,
+        // so refresh-on-activate never fires — watch the folder instead.
+        watcher = FolderWatcher(url: store.rootURL) { [weak self] in self?.refresh() }
     }
 
     func refresh() {
