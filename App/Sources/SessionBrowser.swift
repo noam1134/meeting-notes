@@ -20,7 +20,7 @@ struct SessionBrowser: View {
     @State private var editCategory = ""
     @State private var noteDeleteTarget: NoteDeleteTarget?
     @State private var editingFolder: URL?
-    @State private var editorFrame: CGRect = .zero
+    @State private var editorHovered = false
     @State private var outsideClickMonitor: Any?
 
     enum StatusFilter: String, CaseIterable, Identifiable {
@@ -156,7 +156,7 @@ struct SessionBrowser: View {
                 if isRenaming {
                     TextField("Session name", text: $renameText)
                         .textFieldStyle(.plain)
-                        .background(editorFrameReader)
+                        .onHover { editorHovered = $0 }
                         .focused($renameFieldFocus, equals: folder)
                         .onSubmit { commitRename(folder: folder) }
                         .onExitCommand { renamingFolder = nil }
@@ -557,8 +557,9 @@ struct SessionBrowser: View {
             if isEditing {
                 NoteComposer(text: $editText, category: $editCategory,
                             categories: state.settings.categories,
-                            onSubmit: { saveEditNote(id: note.id, folder: folder) })
-                    .background(editorFrameReader)
+                            onSubmit: { saveEditNote(id: note.id, folder: folder) },
+                            chipsAboveField: true)
+                    .onHover { editorHovered = $0 }
                 Text("⏎ save · esc cancel")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -621,13 +622,30 @@ struct SessionBrowser: View {
     // the field focused), so commit active inline edits on any click outside the editor.
     private func installOutsideClickMonitor() {
         guard outsideClickMonitor == nil else { return }
-        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { event in
             guard editingNoteID != nil || renamingFolder != nil,
-                  let window = event.window, window.title == "Sessions",
-                  let contentView = window.contentView else { return event }
-            let p = event.locationInWindow
-            let point = CGPoint(x: p.x, y: contentView.bounds.height - p.y)
-            guard !editorFrame.insetBy(dx: -8, dy: -8).contains(point) else { return event }
+                  let window = event.window, window.title == "Sessions" else { return event }
+            if event.type == .keyDown {
+                // Esc cancels the active inline edit no matter where focus wandered
+                // (a chip click can move focus off the field, starving onExitCommand).
+                guard event.keyCode == 53 else { return event }
+                DispatchQueue.main.async {
+                    editingNoteID = nil
+                    renamingFolder = nil
+                }
+                return nil
+            }
+            // The mouse being over the editor (SwiftUI hover) means this click is
+            // interaction with it — field, chips, selection — never a dismissal.
+            if editorHovered { return event }
+            // Clicks landing on a text view are selection/caret placement — never commit.
+            if let hit = window.contentView?.hitTest(event.locationInWindow) {
+                var v: NSView? = hit
+                while let cur = v {
+                    if cur is NSTextView { return event }
+                    v = cur.superview
+                }
+            }
             DispatchQueue.main.async {
                 if let folder = renamingFolder { commitRename(folder: folder) }
                 if let id = editingNoteID, let folder = editingFolder {
@@ -635,14 +653,6 @@ struct SessionBrowser: View {
                 }
             }
             return event
-        }
-    }
-
-    private var editorFrameReader: some View {
-        GeometryReader { geo in
-            Color.clear
-                .onAppear { editorFrame = geo.frame(in: .global) }
-                .onChange(of: geo.frame(in: .global)) { _, f in editorFrame = f }
         }
     }
 

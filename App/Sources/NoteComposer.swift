@@ -7,11 +7,13 @@ struct NoteComposer: View {
     let categories: [String]
     let onSubmit: () -> Void
     var focusOnAppear = true
+    var chipsAboveField = false
     var onFocusLost: (() -> Void)? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if chipsAboveField { categoryChips }
             TextField("Note…", text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.title3)
@@ -31,7 +33,7 @@ struct NoteComposer: View {
                         onFocusLost?()
                     }
                 }
-            categoryChips
+            if !chipsAboveField { categoryChips }
         }
         .onAppear { if focusOnAppear { focused = true } }
     }
