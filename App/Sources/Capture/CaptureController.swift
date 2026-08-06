@@ -55,7 +55,7 @@ enum CaptureController {
                 capturePanel?.close()
                 capturePanel = nil
             }),
-            width: displayWidth, height: height)
+            width: displayWidth, height: height, movableByBackground: false)
         capturePanel = panel
         panel.show()
     }

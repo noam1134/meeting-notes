@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
-    init<V: View>(view: V, width: CGFloat, height: CGFloat) {
+    init<V: View>(view: V, width: CGFloat, height: CGFloat, movableByBackground: Bool = true) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                    styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
                    backing: .buffered, defer: false)
@@ -10,7 +10,7 @@ final class FloatingPanel: NSPanel {
         level = .floating
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = movableByBackground
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         contentView = NSHostingView(rootView: view)
     }
