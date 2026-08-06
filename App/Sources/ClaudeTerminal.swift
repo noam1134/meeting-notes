@@ -24,7 +24,7 @@ final class ClaudeTerminalManager {
     @discardableResult
     func show(for folder: URL, sessionName: String, prompt: String) -> Bool {
         let controller = terminals[folder] ?? ClaudeTerminalWindowController()
-        guard controller.run(sessionName: sessionName, prompt: prompt) else { return false }
+        guard controller.run(folder: folder, sessionName: sessionName, prompt: prompt) else { return false }
         // (Re)wire the cleanup hook every call — idempotent, and covers the
         // freshly-created-controller case without a second branch.
         controller.onWindowClosed = { [weak self] in
@@ -90,12 +90,12 @@ final class ClaudeTerminalWindowController: NSObject {
     /// Returns `false` (and shows no window) if the `claude` CLI can't be found on
     /// the user's PATH — the caller is expected to surface that via `state.lastError`.
     @discardableResult
-    func run(sessionName: String, prompt: String) -> Bool {
+    func run(folder: URL, sessionName: String, prompt: String) -> Bool {
         guard Self.claudeIsAvailable() else { return false }
 
         switch runState.run() {
         case .spawnFresh:
-            return spawnProcess(sessionName: sessionName, prompt: prompt)
+            return spawnProcess(folder: folder, sessionName: sessionName, prompt: prompt)
 
         case .bringExistingWindowForward:
             NSApp.activate(ignoringOtherApps: true)
@@ -110,11 +110,11 @@ final class ClaudeTerminalWindowController: NSObject {
             terminalView?.process.terminate()
             terminalView = nil
             window = nil
-            return spawnProcess(sessionName: sessionName, prompt: prompt)
+            return spawnProcess(folder: folder, sessionName: sessionName, prompt: prompt)
         }
     }
 
-    private func spawnProcess(sessionName: String, prompt: String) -> Bool {
+    private func spawnProcess(folder: URL, sessionName: String, prompt: String) -> Bool {
         self.sessionName = sessionName
 
         let frame = NSRect(x: 0, y: 0, width: 720, height: 440)
@@ -137,9 +137,19 @@ final class ClaudeTerminalWindowController: NSObject {
         // (see task brief) — everything else (e.g. other MCP servers) still
         // prompts normally. Clarifying questions are conversation, not tool
         // calls, so they're unaffected by either flag.
-        let command = "claude --permission-mode acceptEdits --allowedTools \"mcp__trello__*\" \(Self.shellQuote(prompt))"
+        // cd into the session folder so Claude's workspace (and trust prompt)
+        // is scoped to this meeting's data, not the app's inherited cwd ("/").
+        let command = "cd \(Self.shellQuote(folder.path)) && claude --permission-mode acceptEdits --allowedTools \"mcp__trello__*\" \(Self.shellQuote(prompt))"
         runState.didSpawn()
-        view.startProcess(executable: "/bin/zsh", args: ["-l", "-c", command])
+        // SwiftTerm's default PTY environment omits HOME/PATH, so `zsh -l`
+        // can't source the user's profile and `claude` is never found —
+        // inherit the app's full environment plus terminal identity.
+        var env = ProcessInfo.processInfo.environment
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
+        view.startProcess(executable: "/bin/zsh", args: ["-l", "-c", command],
+                          environment: env.map { "\($0.key)=\($0.value)" })
 
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
@@ -183,7 +193,16 @@ extension ClaudeTerminalWindowController: LocalProcessTerminalViewDelegate {
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
-        if runState.processDidTerminate() {
+        let hadWindow = runState.processDidTerminate()
+        let code = exitCode ?? -1
+        if code != 0 {
+            // Keep the window (and the process's output) visible so failures
+            // are readable instead of a split-second flash. ⌘W closes without
+            // the still-running confirm (process already exited).
+            terminalView?.feed(text: "\r\n\u{1b}[31m[claude exited with code \(code) — press ⌘W to close]\u{1b}[0m\r\n")
+            return
+        }
+        if hadWindow {
             window?.close()   // windowShouldClose now passes (not running) -> windowWillClose clears both refs
         } else {
             // Shouldn't happen: `windowShouldClose` terminates the process (and
