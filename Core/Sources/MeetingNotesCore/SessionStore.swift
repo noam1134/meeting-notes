@@ -84,6 +84,12 @@ public final class SessionStore {
     public func addNote(text: String, category: String, imageData: Data?,
                         at date: Date = Date()) throws -> Note {
         guard let folder = try activeSessionFolder() else { throw SessionStoreError.noActiveSession }
+        return try addNote(text: text, category: category, imageData: imageData, to: folder, at: date)
+    }
+
+    @discardableResult
+    public func addNote(text: String, category: String, imageData: Data?,
+                        to folder: URL, at date: Date = Date()) throws -> Note {
         var session = try loadSession(in: folder)   // reload: tolerate external edits
         var imageName: String?
         if let imageData {

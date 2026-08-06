@@ -109,6 +109,37 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNil(session2.endedAt)
     }
 
+    func testAddNoteToFolderWorksOnEndedSession() throws {
+        let folder = try store.startSession(named: "a")
+        try store.addNote(text: "first", category: "FYI", imageData: nil)
+        try store.endActiveSession()
+        let before = try store.loadSession(in: folder)
+        let note = try store.addNote(text: "later", category: "Decision", imageData: nil, to: folder)
+        let after = try store.loadSession(in: folder)
+        XCTAssertEqual(after.notes.map(\.text), ["first", "later"])
+        XCTAssertEqual(after.endedAt, before.endedAt)
+        XCTAssertEqual(after.notes.last, note)
+    }
+
+    func testAddNoteToFolderWithCorruptSessionThrowsAndLeavesUntouched() throws {
+        let folder = try store.startSession(named: "bad")
+        let jsonURL = folder.appendingPathComponent("session.json")
+        try Data("{not json".utf8).write(to: jsonURL)
+        XCTAssertThrowsError(try store.addNote(text: "x", category: "FYI", imageData: nil, to: folder)) {
+            XCTAssertEqual($0 as? SessionStoreError, .corruptSession(folder))
+        }
+        XCTAssertEqual(try Data(contentsOf: jsonURL), Data("{not json".utf8))
+    }
+
+    func testAddNoteToFolderImageNumberingContinuesFromExisting() throws {
+        let folder = try store.startSession(named: "a")
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        try store.addNote(text: "one", category: "FYI", imageData: data)
+        let note = try store.addNote(text: "two", category: "FYI", imageData: data, to: folder)
+        XCTAssertEqual(note.image, "img-002.png")
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("img-002.png")), data)
+    }
+
     func testListSessionsNewestFirst() throws {
         try store.startSession(named: "old", at: date("2026-08-05T07:00:00Z"))
         try store.endActiveSession(at: date("2026-08-05T08:00:00Z"))
