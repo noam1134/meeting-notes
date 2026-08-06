@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-// Full-size screenshot viewer presented as a sheet from a note card thumbnail.
+// Full-size screenshot viewer presented in its own window (see
+// PreviewWindowController) from a note card thumbnail.
 //
-// The sheet hugs the image: `containerSize` is the image's natural size
+// The window hugs the image: `containerSize` is the image's natural size
 // scaled down (never up) to fit within 85% of the screen, so a small
 // screenshot gets a small window at 100% and a huge screenshot gets a capped
 // window showing the image fitted. Zoom is relative to that fitted size, 1.0
@@ -74,7 +75,8 @@ struct ImagePreview: View {
                     .onEnded { _ in lastZoom = zoom }
             )
         }
-        .frame(width: containerSize.width, height: containerSize.height + toolbarHeight)
+        .frame(minWidth: minWidth, idealWidth: containerSize.width, maxWidth: .infinity,
+               idealHeight: containerSize.height + toolbarHeight, maxHeight: .infinity)
         .onExitCommand(perform: dismiss)
     }
 

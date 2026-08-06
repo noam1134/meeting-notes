@@ -8,7 +8,6 @@ struct SessionBrowser: View {
     @State private var searchText = ""
     @State private var statusFilter: StatusFilter = .all
     @State private var selectedCategory: String?
-    @State private var previewImage: PreviewImage?
     @State private var showAddNotePopover = false
     @State private var addNoteText = ""
     @State private var addNoteCategory = ""
@@ -24,11 +23,6 @@ struct SessionBrowser: View {
     enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All", pending = "Pending"
         var id: String { rawValue }
-    }
-
-    private struct PreviewImage: Identifiable {
-        let id = UUID()
-        let image: NSImage
     }
 
     private struct SessionDeleteTarget: Identifiable {
@@ -62,19 +56,6 @@ struct SessionBrowser: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
-            }
-        }
-        .overlay {
-            if let wrapper = previewImage {
-                ZStack {
-                    Color.black.opacity(0.45)
-                        .ignoresSafeArea()
-                        .onTapGesture { previewImage = nil }
-                    ImagePreview(image: wrapper.image) { previewImage = nil }
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .shadow(radius: 24)
-                }
-                .onExitCommand { previewImage = nil }
             }
         }
         .confirmationDialog(
@@ -551,7 +532,7 @@ struct SessionBrowser: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        previewImage = PreviewImage(image: nsImage)
+                        PreviewWindowController.shared.show(image: nsImage)
                     }
             }
         }
