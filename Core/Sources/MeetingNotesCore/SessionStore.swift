@@ -39,11 +39,24 @@ public final class SessionStore {
         // whether the directory already exists on disk at construction time
         // (appendingPathComponent auto-detects and appends a trailing slash
         // for existing directories, which would break URL equality below).
-        let folder = rootURL.appendingPathComponent(folderName, isDirectory: false)
+        let folder = try uniqueFolder(for: folderName)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let session = Session(name: name ?? stamp, startedAt: date,
                               endedAt: nil, status: .pending, notes: [])
         try write(session, to: folder)
+        return folder
+    }
+
+    // Appends a numeric suffix (-2, -3, …) until an unused folder name is found,
+    // so two sessions started in the same minute never collide and silently
+    // clobber each other's session.json.
+    private func uniqueFolder(for baseName: String) throws -> URL {
+        var folder = rootURL.appendingPathComponent(baseName, isDirectory: false)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: folder.path) {
+            folder = rootURL.appendingPathComponent("\(baseName)-\(suffix)", isDirectory: false)
+            suffix += 1
+        }
         return folder
     }
 

@@ -127,7 +127,10 @@ struct CaptureNoteView: View {
 
     private func save() {
         guard let png = AnnotationRenderer.flatten(image: image, shapes: shapes,
-                                                   viewSize: displaySize) else { return }
+                                                   viewSize: displaySize) else {
+            state.lastError = "Failed to render annotated screenshot"
+            return
+        }
         if state.activeSession == nil { state.startMeeting(named: nil) }
         state.addNote(text: note, category: category, imageData: png)
         dismiss()

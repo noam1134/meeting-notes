@@ -2,10 +2,7 @@ import AppKit
 import SwiftUI
 
 final class RegionSelectWindow: NSWindow {
-    private let onSelect: (CGImage?) -> Void
-
     init(screenshot: CGImage, onSelect: @escaping (CGImage?) -> Void) {
-        self.onSelect = onSelect
         let screenFrame = NSScreen.main?.frame ?? .zero
         super.init(contentRect: screenFrame, styleMask: [.borderless],
                    backing: .buffered, defer: false)

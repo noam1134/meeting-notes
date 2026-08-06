@@ -91,6 +91,24 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: jsonURL), Data("{not json".utf8))  // untouched
     }
 
+    func testStartSessionSameDateDoesNotOverwriteExistingFolder() throws {
+        let d = date("2026-08-06T07:30:00Z")
+        let folder1 = try store.startSession(named: "a", at: d)
+        try store.addNote(text: "keep me", category: "FYI", imageData: nil)
+        try store.endActiveSession(at: d)
+        let folder2 = try store.startSession(named: "a", at: d)
+
+        XCTAssertNotEqual(folder1, folder2)
+
+        let session1 = try store.loadSession(in: folder1)
+        XCTAssertEqual(session1.notes.map(\.text), ["keep me"])
+        XCTAssertEqual(session1.endedAt, d)
+
+        let session2 = try store.loadSession(in: folder2)
+        XCTAssertEqual(session2.notes, [])
+        XCTAssertNil(session2.endedAt)
+    }
+
     func testListSessionsNewestFirst() throws {
         try store.startSession(named: "old", at: date("2026-08-05T07:00:00Z"))
         try store.endActiveSession(at: date("2026-08-05T08:00:00Z"))
