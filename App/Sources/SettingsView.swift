@@ -30,6 +30,10 @@ struct SettingsView: View {
                             state.lastError = String(describing: error)
                         }
                     }
+                Toggle("Morning reminder", isOn: Binding(
+                    get: { state.settings.morningReminderEnabled },
+                    set: { state.setMorningReminderEnabled($0) }
+                ))
             }
             Section("Shortcuts") {
                 KeyboardShortcuts.Recorder("Screenshot note:", name: .captureScreenshot)

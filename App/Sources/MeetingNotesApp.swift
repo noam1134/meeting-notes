@@ -76,9 +76,16 @@ struct MeetingNotesApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("MeetingNotes", systemImage: appState.activeSession == nil
-                     ? "note.text" : "record.circle.fill") {
+        MenuBarExtra {
             MenuContent(state: appState)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: appState.activeSession == nil ? "note.text" : "record.circle.fill")
+                if appState.pendingSessionCount > 0 {
+                    Text("\(appState.pendingSessionCount)")
+                }
+            }
+            .accessibilityLabel("MeetingNotes")
         }
         .menuBarExtraStyle(.window)
 
