@@ -23,8 +23,8 @@ final class RegionSelectWindow: NSWindow {
     private var finished = false
     private var onSelect: ((CGImage?) -> Void)?
 
-    init(screenshot: CGImage, onSelect: @escaping (CGImage?) -> Void) {
-        let screenFrame = NSScreen.main?.frame ?? .zero
+    init(screenshot: CGImage, screen: NSScreen, onSelect: @escaping (CGImage?) -> Void) {
+        let screenFrame = screen.frame
         super.init(contentRect: screenFrame, styleMask: [.borderless],
                    backing: .buffered, defer: false)
         self.onSelect = onSelect

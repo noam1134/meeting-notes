@@ -10,13 +10,14 @@ enum CaptureController {
         // Re-entrancy guard: a region-select window or capture note panel is
         // already open, so ignore this ⌃⇧S press rather than opening a second.
         guard regionWindow == nil, capturePanel == nil else { return }
+        let mouse = NSEvent.mouseLocation
         Task {
             do {
                 // Attempt-first: CGPreflightScreenCaptureAccess() is known to
                 // return stale `false` on macOS 14/15 even when TCC has
                 // already granted access, so don't gate on it up front.
-                let screenshot = try await ScreenCapturer.captureMainDisplay()
-                let window = RegionSelectWindow(screenshot: screenshot) { cropped in
+                let (screenshot, screen) = try await ScreenCapturer.captureDisplay(containing: mouse)
+                let window = RegionSelectWindow(screenshot: screenshot, screen: screen) { cropped in
                     regionWindow = nil
                     guard let cropped else { return }
                     presentCaptureWindow(image: cropped, state: state)
