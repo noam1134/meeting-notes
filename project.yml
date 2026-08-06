@@ -12,7 +12,10 @@ targets:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
-    sources: [App/Sources]
+    sources:
+      - App/Sources
+      - path: App/Resources
+        buildPhase: resources
     dependencies:
       - package: MeetingNotesCore
       - package: KeyboardShortcuts
@@ -21,6 +24,7 @@ targets:
       properties:
         LSUIElement: true
         CFBundleDisplayName: MeetingNotes
+        CFBundleIconFile: AppIcon
     settings:
       base:
         CODE_SIGN_STYLE: Automatic
