@@ -10,12 +10,11 @@ enum CaptureController {
         // Re-entrancy guard: a region-select window or capture note panel is
         // already open, so ignore this ⌃⇧S press rather than opening a second.
         guard regionWindow == nil, capturePanel == nil else { return }
-        guard ScreenCapturer.hasPermission() else {
-            showPermissionExplainer()
-            return
-        }
         Task {
             do {
+                // Attempt-first: CGPreflightScreenCaptureAccess() is known to
+                // return stale `false` on macOS 14/15 even when TCC has
+                // already granted access, so don't gate on it up front.
                 let screenshot = try await ScreenCapturer.captureMainDisplay()
                 let window = RegionSelectWindow(screenshot: screenshot) { cropped in
                     regionWindow = nil
@@ -25,9 +24,27 @@ enum CaptureController {
                 regionWindow = window
                 window.begin()
             } catch {
-                state.lastError = "Capture failed: \(error.localizedDescription)"
+                if isPermissionError(error) {
+                    showPermissionExplainer()
+                } else {
+                    state.lastError = "Capture failed: \(String(describing: error)) [preflight=\(ScreenCapturer.hasPermission())]"
+                }
             }
         }
+    }
+
+    private static func isPermissionError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain.contains("SCStream"), nsError.code == -3801 || nsError.code == -3802 {
+            return true
+        }
+        if nsError.domain == "com.apple.screencapturekit" {
+            return true
+        }
+        let description = String(describing: error).lowercased()
+        return description.contains("declined")
+            || description.contains("not permitted")
+            || description.contains("tcc")
     }
 
     static func presentCaptureWindow(image: CGImage, state: AppState) {
@@ -44,12 +61,15 @@ enum CaptureController {
     }
 
     private static func showPermissionExplainer() {
-        ScreenCapturer.requestPermission()
+        if !ScreenCapturer.hasPermission() {
+            ScreenCapturer.requestPermission()
+        }
         let alert = NSAlert()
         alert.messageText = "Screen Recording permission needed"
         alert.informativeText = "MeetingNotes needs Screen Recording access to capture screenshots. Grant it in System Settings, then relaunch the app."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(string:
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
