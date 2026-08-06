@@ -10,6 +10,21 @@ final class AppState {
     var settings: AppSettings
     var lastError: String?
 
+    // Sessions that have ended but not yet been processed — drives the menu
+    // bar badge and the morning-reminder notification.
+    var pendingSessionCount: Int {
+        sessions.reduce(into: 0) { count, item in
+            if case let .readable(session, _) = item, session.status == .pending, !session.isActive {
+                count += 1
+            }
+        }
+    }
+
+    // Tracks the last count a notification refresh was issued for, so
+    // refresh() only touches UNUserNotificationCenter when the count
+    // actually changes (not on every unrelated note edit).
+    private var lastNotifiedPendingCount: Int?
+
     init(store: SessionStore = SessionStore(
         rootURL: FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/MeetingNotes"))) {
@@ -24,6 +39,30 @@ final class AppState {
             if case let .readable(session, _) = item, session.isActive { return session }
             return nil
         }.first
+
+        let count = pendingSessionCount
+        if count != lastNotifiedPendingCount {
+            lastNotifiedPendingCount = count
+            updateMorningReminder()
+        }
+    }
+
+    func setMorningReminderEnabled(_ enabled: Bool) {
+        settings.morningReminderEnabled = enabled
+        settings.save()
+        updateMorningReminder()
+    }
+
+    private func updateMorningReminder() {
+        guard settings.morningReminderEnabled else {
+            NotificationManager.refresh(enabled: false, pendingCount: 0)
+            return
+        }
+        let count = pendingSessionCount
+        NotificationManager.requestAuthorizationIfNeeded { granted in
+            guard granted else { return }
+            NotificationManager.refresh(enabled: true, pendingCount: count)
+        }
     }
 
     func startMeeting(named name: String?) {
