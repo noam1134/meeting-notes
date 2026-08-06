@@ -26,7 +26,7 @@ struct MeetingNotesApp: App {
         guard !hotkeysInstalled else { return }
         hotkeysInstalled = true
         HotkeyManager.install(
-            onScreenshot: { /* Task 8 wires CaptureController.begin(state:) here */ },
+            onScreenshot: { CaptureController.begin(state: appState) },
             onQuickNote: { showQuickNote() }
         )
     }
