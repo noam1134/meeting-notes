@@ -359,6 +359,13 @@ struct SessionBrowser: View {
             } label: {
                 Label("Copy for Claude", systemImage: "doc.on.clipboard")
             }
+            Button {
+                processWithClaude(session: session, folder: folder)
+            } label: {
+                Label("Process with Claude", systemImage: "terminal")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(session.status == .processed)
         }
         .padding()
     }
@@ -421,11 +428,25 @@ struct SessionBrowser: View {
         .font(.caption.bold())
     }
 
+    // Shared by "Copy for Claude" (clipboard) and "Process with Claude" (embedded
+    // terminal) so the two entry points always describe the same workflow.
+    static func processingPrompt(for folder: URL) -> String {
+        "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, and expand each note into full context. IMPORTANT: my notes are shorthand and may be ambiguous or missing details — before creating anything in Trello, go over the notes and ask me clarifying questions about anything unclear (what the task actually is, its scope, and any missing specifics). Do not create any Trello card you are not sure about. Only after I've confirmed, create Trello cards via the Trello MCP for the notes categorized 'Trello task'; after creating each card, write its URL into that note's \"trello\" field in session.json, then set each handled note's status and the session's status to \"processed\"."
+    }
+
     private func copyForClaude(folder: URL) {
-        let message = "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, and expand each note into full context. IMPORTANT: my notes are shorthand and may be ambiguous or missing details — before creating anything in Trello, go over the notes and ask me clarifying questions about anything unclear (what the task actually is, its scope, and any missing specifics). Do not create any Trello card you are not sure about. Only after I've confirmed, create Trello cards via the Trello MCP for the notes categorized 'Trello task'; after creating each card, write its URL into that note's \"trello\" field in session.json, then set each handled note's status and the session's status to \"processed\"."
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(message, forType: .string)
+        pasteboard.setString(Self.processingPrompt(for: folder), forType: .string)
+    }
+
+    private func processWithClaude(session: Session, folder: URL) {
+        let started = ClaudeTerminalWindowController.shared.run(
+            sessionName: session.name,
+            prompt: Self.processingPrompt(for: folder))
+        if !started {
+            state.lastError = "Claude Code CLI not found — install it (https://claude.com/product/claude-code) or use Copy for Claude instead."
+        }
     }
 
     // MARK: - Category chips
