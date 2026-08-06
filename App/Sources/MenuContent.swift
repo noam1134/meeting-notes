@@ -4,7 +4,6 @@ import MeetingNotesCore
 struct MenuContent: View {
     @Bindable var state: AppState
     @State private var meetingName = ""
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -12,8 +11,7 @@ struct MenuContent: View {
             primaryAction
             Divider()
             MenuRow(icon: "rectangle.stack", label: "Browse Sessions", shortcut: "⌘B") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "browser")
+                BrowserWindowController.shared.show(state: state)
             }
             .keyboardShortcut("b")
             MenuRow(icon: "folder", label: "Open Sessions Folder", shortcut: nil) {
