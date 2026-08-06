@@ -26,9 +26,18 @@ struct QuickNoteView: View {
                 .onSubmit(save)
             HStack(spacing: 6) {
                 ForEach(Array(state.settings.categories.enumerated()), id: \.element) { i, cat in
-                    let button = Button("\(i + 1) \(cat)") { category = cat }
-                        .buttonStyle(.bordered)
-                        .tint(category == cat ? .accentColor : .secondary)
+                    let isSelected = category == cat
+                    let button = Button {
+                        category = cat
+                    } label: {
+                        Text("\(i + 1) \(cat)")
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(isSelected ? categoryColor(cat, categories: state.settings.categories) : Color.clear,
+                                        in: Capsule())
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                            .overlay(Capsule().stroke(isSelected ? Color.clear : Color.secondary.opacity(0.4)))
+                    }
+                    .buttonStyle(.plain)
                     // CategoryHotkey.digitCharacter is nil for a 10th+ category
                     // (index >= 9); ⌘-digit shortcuts only span 1-9, and the
                     // unguarded Character("\(i + 1)") this replaces traps at

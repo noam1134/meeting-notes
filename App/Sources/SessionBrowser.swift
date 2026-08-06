@@ -2,10 +2,6 @@ import SwiftUI
 import Combine
 import MeetingNotesCore
 
-// Fixed 6-color palette; CategoryStyle.colorIndex(for:in:) (Core) picks the
-// index deterministically so category colors stay stable across launches.
-private let categoryPalette: [Color] = [.purple, .teal, .orange, .pink, .blue, .green]
-
 struct SessionBrowser: View {
     @Bindable var state: AppState
     @State private var selected: URL?
@@ -13,6 +9,9 @@ struct SessionBrowser: View {
     @State private var statusFilter: StatusFilter = .all
     @State private var selectedCategory: String?
     @State private var previewImage: PreviewImage?
+    @State private var showAddNotePopover = false
+    @State private var addNoteText = ""
+    @State private var addNoteCategory = ""
 
     enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All", pending = "Pending"
@@ -100,6 +99,8 @@ struct SessionBrowser: View {
 
     private func sidebarRow(_ session: Session) -> some View {
         let pendingCount = session.notes.filter { $0.status == .pending }.count
+        let presentCategories = Set(session.notes.map(\.category))
+        let categoryDots = state.settings.categories.filter { presentCategories.contains($0) }.prefix(5)
         return HStack(spacing: 8) {
             if session.isActive {
                 Circle().fill(.red).frame(width: 8, height: 8)
@@ -109,6 +110,13 @@ struct SessionBrowser: View {
                 Text("\(timeString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if !categoryDots.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(Array(categoryDots), id: \.self) { cat in
+                            Circle().fill(color(for: cat)).frame(width: 6, height: 6)
+                        }
+                    }
+                }
             }
             Spacer()
             if session.status == .processed {
@@ -234,12 +242,68 @@ struct SessionBrowser: View {
             Spacer()
             statusBadge(session.status)
             Button {
+                addNoteText = ""
+                addNoteCategory = state.settings.categories.first ?? ""
+                showAddNotePopover = true
+            } label: {
+                Image(systemName: "plus")
+            }
+            .keyboardShortcut("n", modifiers: [.command])
+            .popover(isPresented: $showAddNotePopover) {
+                addNotePopover(folder: folder)
+            }
+            Button {
                 copyForClaude(folder: folder)
             } label: {
                 Label("Copy for Claude", systemImage: "doc.on.clipboard")
             }
         }
         .padding()
+    }
+
+    private func addNotePopover(folder: URL) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Add a note…", text: $addNoteText)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 280)
+                .onSubmit { saveAddNote(folder: folder) }
+            HStack(spacing: 6) {
+                ForEach(state.settings.categories, id: \.self) { cat in
+                    let isSelected = addNoteCategory == cat
+                    let categoryColorValue = color(for: cat)
+                    Button {
+                        addNoteCategory = cat
+                    } label: {
+                        Text(cat)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(isSelected ? categoryColorValue : Color.clear, in: Capsule())
+                            .foregroundStyle(isSelected ? .white : .secondary)
+                            .overlay(Capsule().stroke(isSelected ? Color.clear : Color.secondary.opacity(0.4)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .font(.caption)
+            HStack {
+                Spacer()
+                Button("Cancel") { showAddNotePopover = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { saveAddNote(folder: folder) }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
+
+    private func saveAddNote(folder: URL) {
+        let trimmed = addNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            showAddNotePopover = false
+            return
+        }
+        state.addNote(text: addNoteText, category: addNoteCategory, to: folder)
+        showAddNotePopover = false
     }
 
     private func statusBadge(_ status: ProcessingStatus) -> some View {
@@ -256,7 +320,7 @@ struct SessionBrowser: View {
     }
 
     private func copyForClaude(folder: URL) {
-        let message = "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, expand each note into full context, create Trello cards via the Trello MCP for notes categorized 'Trello task', then set each handled note's status and the session status to \"processed\"."
+        let message = "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, and expand each note into full context. IMPORTANT: my notes are shorthand and may be ambiguous or missing details — before creating anything in Trello, go over the notes and ask me clarifying questions about anything unclear (what the task actually is, its scope, and any missing specifics). Do not create any Trello card you are not sure about. Only after I've confirmed, create Trello cards via the Trello MCP for the notes categorized 'Trello task', then set each handled note's status and the session's status to \"processed\" in session.json."
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(message, forType: .string)
@@ -327,8 +391,11 @@ struct SessionBrowser: View {
                 Text(note.category)
                     .font(.caption.bold())
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(color.opacity(0.2), in: Capsule())
-                    .foregroundStyle(color)
+                    .background(color, in: Capsule())
+                    .foregroundStyle(.white)
+                Image(systemName: note.image != nil ? "photo" : "text.alignleft")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(timeString(note.timestamp))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -358,8 +425,7 @@ struct SessionBrowser: View {
     }
 
     private func color(for category: String) -> Color {
-        let idx = CategoryStyle.colorIndex(for: category, in: state.settings.categories)
-        return categoryPalette[idx % categoryPalette.count]
+        categoryColor(category, categories: state.settings.categories)
     }
 
     // MARK: - Formatting

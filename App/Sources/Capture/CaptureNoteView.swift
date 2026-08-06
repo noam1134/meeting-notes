@@ -54,6 +54,9 @@ struct CaptureNoteView: View {
                 .onSubmit(save)
 
             HStack {
+                Circle()
+                    .fill(categoryColor(category, categories: state.settings.categories))
+                    .frame(width: 10, height: 10)
                 Picker("Category", selection: $category) {
                     ForEach(state.settings.categories, id: \.self) { Text($0) }
                 }
