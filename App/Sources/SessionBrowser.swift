@@ -153,7 +153,7 @@ struct SessionBrowser: View {
                         .onExitCommand { renamingFolder = nil }
                         .onChange(of: renameFieldFocus) { _, newValue in
                             if newValue != folder && renamingFolder == folder {
-                                renamingFolder = nil
+                                commitRename(folder: folder)
                             }
                         }
                 } else {
@@ -182,7 +182,7 @@ struct SessionBrowser: View {
             }
         }
         .padding(.vertical, 2)
-        .onTapGesture(count: 2) { startRename(session: session, folder: folder) }
+        .simultaneousGesture(TapGesture(count: 2).onEnded { startRename(session: session, folder: folder) })
         .contextMenu { sessionContextMenu(session: session, folder: folder) }
     }
 
@@ -213,6 +213,7 @@ struct SessionBrowser: View {
     }
 
     private func commitRename(folder: URL) {
+        guard renamingFolder == folder else { return }
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             renamingFolder = nil
@@ -548,14 +549,15 @@ struct SessionBrowser: View {
             if isEditing {
                 NoteComposer(text: $editText, category: $editCategory,
                             categories: state.settings.categories,
-                            onSubmit: { saveEditNote(id: note.id, folder: folder) })
+                            onSubmit: { saveEditNote(id: note.id, folder: folder) },
+                            onFocusLost: { saveEditNote(id: note.id, folder: folder) })
                 Text("⏎ save · esc cancel")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text(note.text)
                     .font(.system(size: 16))
-                    .onTapGesture(count: 2) { startEditingNote(note) }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note) })
             }
             if let imageName = note.image,
                let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)) {
@@ -607,6 +609,7 @@ struct SessionBrowser: View {
     }
 
     private func saveEditNote(id: UUID, folder: URL) {
+        guard editingNoteID == id else { return }
         let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             editingNoteID = nil

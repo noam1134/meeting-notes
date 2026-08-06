@@ -7,6 +7,7 @@ struct NoteComposer: View {
     let categories: [String]
     let onSubmit: () -> Void
     var focusOnAppear = true
+    var onFocusLost: (() -> Void)? = nil
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -17,6 +18,7 @@ struct NoteComposer: View {
                 .lineLimit(1...6)
                 .focused($focused)
                 .onSubmit(onSubmit)
+                .onChange(of: focused) { _, isFocused in if !isFocused { onFocusLost?() } }
             categoryChips
         }
         .onAppear { if focusOnAppear { focused = true } }
