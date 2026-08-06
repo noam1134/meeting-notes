@@ -9,9 +9,19 @@ import SwiftTerm
 /// the child process rather than letting it bubble to the window's responder
 /// chain, so Esc can never reach a window-level "close" handler while the
 /// terminal has focus — wiring one there would fight the CLI, not protect
-/// against it. The "guard against accidental close while running" ask is
-/// implemented via `windowShouldClose(_:)` instead, which covers the actual
-/// close vectors for this window (red button, Cmd+W).
+/// against it (verified against the actually-resolved SwiftTerm 1.15.0
+/// checkout, not just the `from: 1.2.0` pin). The "guard against accidental
+/// close while running" ask is implemented via `windowShouldClose(_:)`
+/// instead, which covers the actual close vectors for this window (red
+/// button, Cmd+W): confirming "Close Anyway" there terminates the process
+/// (`LocalProcess.terminate()`, public since SwiftTerm's `process` property
+/// was exposed after 1.2.0) so closing the window and stopping the run are
+/// the same action — no orphaned background process, and `isProcessRunning`
+/// is always false again by the time the window is actually gone. That also
+/// means `LocalProcess.delegate` never needs to outlive its window: it's
+/// declared `weak` in the resolved 1.15.0 dependency (not `unowned` as in
+/// 1.2.0), so there's no dangling-pointer risk to guard against by keeping
+/// `terminalView` alive off-screen.
 @MainActor
 final class ClaudeTerminalWindowController: NSObject {
     static let shared = ClaudeTerminalWindowController()
@@ -28,18 +38,29 @@ final class ClaudeTerminalWindowController: NSObject {
         guard Self.claudeIsAvailable() else { return false }
 
         if isProcessRunning {
-            // A claude process is already in flight — never clobber `terminalView`
-            // while that's true (see windowWillClose below for why) or spawn a
-            // second claude on top of it. If its window is still open, just
-            // surface it; if the user closed it while running (window is nil,
-            // process kept alive in the background), this is a no-op.
-            if let window {
-                NSApp.activate(ignoringOtherApps: true)
-                window.makeKeyAndOrderFront(nil)
+            // A claude process is already in flight — never spawn a second one
+            // on top of it. windowShouldClose/windowWillClose guarantee `window`
+            // is non-nil whenever `isProcessRunning` is true (confirming "Close
+            // Anyway" terminates the process and clears both together, in that
+            // order), so the normal case is just bringing that window forward.
+            guard let window else {
+                // Invariant violated (shouldn't happen — see above). Fail open
+                // instead of silently no-oping: drop the stale process and let
+                // the caller get a fresh session rather than a dead button.
+                terminalView?.process.terminate()
+                terminalView = nil
+                isProcessRunning = false
+                return spawnProcess(sessionName: sessionName, prompt: prompt)
             }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             return true
         }
 
+        return spawnProcess(sessionName: sessionName, prompt: prompt)
+    }
+
+    private func spawnProcess(sessionName: String, prompt: String) -> Bool {
         let frame = NSRect(x: 0, y: 0, width: 720, height: 440)
         let view = LocalProcessTerminalView(frame: frame)
         view.processDelegate = self
@@ -105,11 +126,11 @@ extension ClaudeTerminalWindowController: LocalProcessTerminalViewDelegate {
         if let window {
             window.close()   // windowShouldClose now passes (not running) -> windowWillClose clears both refs
         } else {
-            // Window was already closed (user confirmed "Close Anyway" while
-            // running) — this view was being kept alive off-screen purely so
-            // SwiftTerm's LocalProcess (which holds an `unowned` back-reference
-            // to it) had somewhere valid to deliver this callback. Safe to
-            // release now that the process has actually exited.
+            // Shouldn't happen: `windowShouldClose` terminates the process (and
+            // cancels its exit-monitor) before ever letting `window` become nil
+            // while running, so this callback fires only while the window is
+            // still around. Defensive fallback in case that invariant is ever
+            // broken, so `terminalView` can't leak.
             terminalView = nil
         }
     }
@@ -120,24 +141,24 @@ extension ClaudeTerminalWindowController: NSWindowDelegate {
         guard isProcessRunning else { return true }
         let alert = NSAlert()
         alert.messageText = "Claude is still running"
-        alert.informativeText = "Close this window anyway? The Claude process may keep running in the background."
+        alert.informativeText = "Closing will stop the Claude process. Any clarifying questions it's waiting on won't be answered."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Close Anyway")
+        alert.addButton(withTitle: "Close & Stop")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        // Stop the child process ourselves rather than leaving it running,
+        // headless, with nothing left to answer its clarifying questions.
+        // `LocalProcess.terminate()` cancels its exit-monitor as part of
+        // stopping, so `processTerminated` below will not fire for this run —
+        // mark it not-running here so the next `run()` call starts fresh
+        // instead of finding a dead end.
+        terminalView?.process.terminate()
+        isProcessRunning = false
+        return true
     }
 
     func windowWillClose(_ notification: Notification) {
         window = nil
-        // If the process is still running, deliberately keep `terminalView`
-        // alive (just off-screen): SwiftTerm's `LocalProcess` holds an
-        // `unowned` reference back to it and keeps reading from the pty in
-        // the background until the child process exits, regardless of
-        // whether anything is showing it on screen. Releasing it here would
-        // leave that `unowned` reference dangling and crash on the next
-        // chunk of output. `processTerminated` releases it once it's safe.
-        if !isProcessRunning {
-            terminalView = nil
-        }
+        terminalView = nil
     }
 }
