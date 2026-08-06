@@ -150,4 +150,86 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(first.name, "new")
         XCTAssertEqual(second.name, "old")
     }
+
+    // MARK: - updateNote
+
+    func testUpdateNoteEditsTextCategoryStatusOfRightNoteOnly() throws {
+        let folder = try store.startSession(named: "a")
+        let n1 = try store.addNote(text: "one", category: "FYI", imageData: nil, to: folder)
+        let n2 = try store.addNote(text: "two", category: "Decision", imageData: nil, to: folder)
+
+        try store.updateNote(id: n2.id, in: folder) { note in
+            note.text = "two edited"
+            note.category = "Question"
+            note.status = .processed
+        }
+
+        let session = try store.loadSession(in: folder)
+        XCTAssertEqual(session.notes[0], n1)   // untouched
+        XCTAssertEqual(session.notes[1].text, "two edited")
+        XCTAssertEqual(session.notes[1].category, "Question")
+        XCTAssertEqual(session.notes[1].status, .processed)
+    }
+
+    func testUpdateNoteUnknownIdThrowsNoteNotFound() throws {
+        let folder = try store.startSession(named: "a")
+        try store.addNote(text: "one", category: "FYI", imageData: nil, to: folder)
+        let unknown = UUID()
+        XCTAssertThrowsError(try store.updateNote(id: unknown, in: folder) { $0.text = "x" }) {
+            XCTAssertEqual($0 as? SessionStoreError, .noteNotFound(unknown))
+        }
+    }
+
+    // MARK: - deleteNote
+
+    func testDeleteNoteRemovesNoteAndItsImageOthersIntact() throws {
+        let folder = try store.startSession(named: "a")
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        let n1 = try store.addNote(text: "one", category: "FYI", imageData: data, to: folder)
+        let n2 = try store.addNote(text: "two", category: "FYI", imageData: data, to: folder)
+
+        try store.deleteNote(id: n1.id, in: folder)
+
+        let session = try store.loadSession(in: folder)
+        XCTAssertEqual(session.notes, [n2])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent(n1.image!).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent(n2.image!).path))
+    }
+
+    func testDeleteNoteUnknownIdThrowsNoteNotFound() throws {
+        let folder = try store.startSession(named: "a")
+        let unknown = UUID()
+        XCTAssertThrowsError(try store.deleteNote(id: unknown, in: folder)) {
+            XCTAssertEqual($0 as? SessionStoreError, .noteNotFound(unknown))
+        }
+    }
+
+    // MARK: - renameSession
+
+    func testRenameSessionChangesNameFolderUnchanged() throws {
+        let folder = try store.startSession(named: "a")
+        try store.renameSession(in: folder, to: "New Name")
+        let session = try store.loadSession(in: folder)
+        XCTAssertEqual(session.name, "New Name")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    // MARK: - setSessionStatus
+
+    func testSetSessionStatusRoundTrips() throws {
+        let folder = try store.startSession(named: "a")
+        try store.setSessionStatus(.processed, in: folder)
+        XCTAssertEqual(try store.loadSession(in: folder).status, .processed)
+        try store.setSessionStatus(.pending, in: folder)
+        XCTAssertEqual(try store.loadSession(in: folder).status, .pending)
+    }
+
+    // MARK: - deleteSession
+
+    func testDeleteSessionTrashesFolder() throws {
+        let folder = try store.startSession(named: "a")
+        try store.deleteSession(in: folder)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertTrue(store.listSessions().isEmpty)
+    }
 }

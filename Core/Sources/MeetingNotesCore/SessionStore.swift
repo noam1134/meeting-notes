@@ -8,6 +8,7 @@ public enum SessionListItem: Equatable {
 public enum SessionStoreError: Error, Equatable {
     case noActiveSession
     case corruptSession(URL)
+    case noteNotFound(UUID)
 }
 
 public final class SessionStore {
@@ -105,6 +106,43 @@ public final class SessionStore {
         // truncates timestamp to whole seconds via ISO8601 encoding).
         let persisted = try loadSession(in: folder)
         return persisted.notes.last ?? note
+    }
+
+    public func updateNote(id: UUID, in folder: URL, mutate: (inout Note) -> Void) throws {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        guard let index = session.notes.firstIndex(where: { $0.id == id }) else {
+            throw SessionStoreError.noteNotFound(id)
+        }
+        mutate(&session.notes[index])
+        try write(session, to: folder)
+    }
+
+    public func deleteNote(id: UUID, in folder: URL) throws {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        guard let index = session.notes.firstIndex(where: { $0.id == id }) else {
+            throw SessionStoreError.noteNotFound(id)
+        }
+        let note = session.notes.remove(at: index)
+        if let imageName = note.image {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(imageName))
+        }
+        try write(session, to: folder)
+    }
+
+    public func renameSession(in folder: URL, to name: String) throws {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        session.name = name
+        try write(session, to: folder)
+    }
+
+    public func setSessionStatus(_ status: ProcessingStatus, in folder: URL) throws {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        session.status = status
+        try write(session, to: folder)
+    }
+
+    public func deleteSession(in folder: URL) throws {
+        try FileManager.default.trashItem(at: folder, resultingItemURL: nil)
     }
 
     public func listSessions() -> [SessionListItem] {
