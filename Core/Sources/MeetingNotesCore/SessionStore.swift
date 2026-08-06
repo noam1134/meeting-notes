@@ -99,7 +99,7 @@ public final class SessionStore {
             try imageData.write(to: folder.appendingPathComponent(imageName!))
         }
         let note = Note(id: UUID(), timestamp: date, category: category,
-                        text: text, image: imageName, status: .pending)
+                        text: text, image: imageName, status: .pending, trello: nil)
         session.notes.append(note)
         try write(session, to: folder)
         // Reload so the returned Note matches disk exactly (JSON round-trip

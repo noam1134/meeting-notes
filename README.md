@@ -20,7 +20,9 @@ Open Claude Code and say e.g. "process today's meeting notes". Claude should:
    any Trello card.
 3. Expand each note (screenshots give context), create Trello cards via the
    Trello MCP for notes categorized `Trello task`.
-4. Set each handled note's `status` to `"processed"`, and the session's
+4. After creating each card, write its URL into that note's `trello` field
+   in `session.json`.
+5. Set each handled note's `status` to `"processed"`, and the session's
    `status` to `"processed"` when done. Keep the JSON schema intact.
 
 ## Build

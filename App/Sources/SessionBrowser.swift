@@ -422,7 +422,7 @@ struct SessionBrowser: View {
     }
 
     private func copyForClaude(folder: URL) {
-        let message = "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, and expand each note into full context. IMPORTANT: my notes are shorthand and may be ambiguous or missing details — before creating anything in Trello, go over the notes and ask me clarifying questions about anything unclear (what the task actually is, its scope, and any missing specifics). Do not create any Trello card you are not sure about. Only after I've confirmed, create Trello cards via the Trello MCP for the notes categorized 'Trello task', then set each handled note's status and the session's status to \"processed\" in session.json."
+        let message = "Process my meeting notes in \(folder.path): read session.json and the PNG screenshots, and expand each note into full context. IMPORTANT: my notes are shorthand and may be ambiguous or missing details — before creating anything in Trello, go over the notes and ask me clarifying questions about anything unclear (what the task actually is, its scope, and any missing specifics). Do not create any Trello card you are not sure about. Only after I've confirmed, create Trello cards via the Trello MCP for the notes categorized 'Trello task'; after creating each card, write its URL into that note's \"trello\" field in session.json, then set each handled note's status and the session's status to \"processed\"."
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(message, forType: .string)
@@ -505,6 +505,18 @@ struct SessionBrowser: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if let trelloURLString = note.trello, let trelloURL = URL(string: trelloURLString) {
+                    Button {
+                        NSWorkspace.shared.open(trelloURL)
+                    } label: {
+                        Label("Trello", systemImage: "arrow.up.right")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.blue, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
                 if note.status == .processed {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                 } else {
