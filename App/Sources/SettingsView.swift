@@ -53,5 +53,9 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420, height: 360)
+        .onAppear {
+            // Front the window — the app is normally .accessory (no dock icon).
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }

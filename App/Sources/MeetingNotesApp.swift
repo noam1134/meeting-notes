@@ -27,6 +27,7 @@ struct MeetingNotesApp: App {
         Window("Sessions", id: "browser") {
             SessionBrowser(state: appState)
         }
+        .defaultSize(width: 920, height: 640)
     }
 
     private static func showQuickNote(state: AppState) {

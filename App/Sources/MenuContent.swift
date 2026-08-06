@@ -21,8 +21,11 @@ struct MenuContent: View {
                     .keyboardShortcut(.defaultAction)
             }
             Divider()
-            Button("Browse Sessions") { openWindow(id: "browser") }
-                .keyboardShortcut("b")
+            Button("Browse Sessions") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "browser")
+            }
+            .keyboardShortcut("b")
             Button("Open Sessions Folder") {
                 NSWorkspace.shared.open(state.store.rootURL)
             }
