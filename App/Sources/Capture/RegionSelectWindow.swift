@@ -1,26 +1,66 @@
 import AppKit
 import SwiftUI
 
+final class FirstMouseHostingView<V: View>: NSHostingView<V> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class RegionSelectWindow: NSWindow {
+    private var finished = false
+    private var onSelect: ((CGImage?) -> Void)?
+
     init(screenshot: CGImage, onSelect: @escaping (CGImage?) -> Void) {
         let screenFrame = NSScreen.main?.frame ?? .zero
         super.init(contentRect: screenFrame, styleMask: [.borderless],
                    backing: .buffered, defer: false)
+        self.onSelect = onSelect
         level = .screenSaver
         isOpaque = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = NSHostingView(rootView: RegionSelectView(
+        contentView = FirstMouseHostingView(rootView: RegionSelectView(
             screenshot: screenshot,
             viewSize: screenFrame.size,
             onDone: { [weak self] image in
-                self?.orderOut(nil)
-                onSelect(image)
+                self?.finish(image)
             }))
     }
 
     override var canBecomeKey: Bool { true }
 
-    func begin() { makeKeyAndOrderFront(nil) }
+    func begin() {
+        NSCursor.crosshair.push()
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+    }
+
+    func finish(_ image: CGImage?) {
+        guard !finished else { return }
+        finished = true
+        NSCursor.pop()
+        orderOut(nil)
+        onSelect?(image)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // Esc
+            finish(nil)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        finish(nil)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        finish(nil)
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        finish(nil)
+    }
 }
 
 private struct RegionSelectView: View {
@@ -44,6 +84,17 @@ private struct RegionSelectView: View {
                     .path(in: rect)
                     .stroke(Color.white, lineWidth: 1.5)
             }
+            VStack {
+                Text("Drag to select · Esc to cancel")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(Color.black.opacity(0.6)))
+                    .padding(.top, 60)
+                Spacer()
+            }
+            .allowsHitTesting(false)
         }
         .gesture(DragGesture(minimumDistance: 2)
             .onChanged { v in
@@ -51,7 +102,6 @@ private struct RegionSelectView: View {
                 current = v.location
             }
             .onEnded { _ in finish() })
-        .onExitCommand { onDone(nil) }   // Esc cancels
         .ignoresSafeArea()
     }
 
