@@ -14,10 +14,11 @@ struct SessionBrowser: View {
     @State private var addNoteCategory = ""
     @State private var renamingFolder: URL?
     @State private var renameText = ""
+    @FocusState private var renameFieldFocus: URL?
     @State private var sessionDeleteTarget: SessionDeleteTarget?
     @State private var editingNoteID: UUID?
-    @State private var editNoteText = ""
-    @State private var editNoteCategory = ""
+    @State private var editText = ""
+    @State private var editCategory = ""
     @State private var noteDeleteTarget: NoteDeleteTarget?
 
     enum StatusFilter: String, CaseIterable, Identifiable {
@@ -147,12 +148,26 @@ struct SessionBrowser: View {
         let pendingCount = session.notes.filter { $0.status == .pending }.count
         let presentCategories = Set(session.notes.map(\.category))
         let categoryDots = state.settings.categories.filter { presentCategories.contains($0) }.prefix(5)
+        let isRenaming = renamingFolder == folder
         return HStack(spacing: 8) {
             if session.isActive {
                 Circle().fill(.red).frame(width: 8, height: 8)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.name).lineLimit(1)
+                if isRenaming {
+                    TextField("Session name", text: $renameText)
+                        .textFieldStyle(.plain)
+                        .focused($renameFieldFocus, equals: folder)
+                        .onSubmit { commitRename(folder: folder) }
+                        .onExitCommand { renamingFolder = nil }
+                        .onChange(of: renameFieldFocus) { _, newValue in
+                            if newValue != folder && renamingFolder == folder {
+                                renamingFolder = nil
+                            }
+                        }
+                } else {
+                    Text(session.name).lineLimit(1)
+                }
                 Text("\(timeString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -176,20 +191,15 @@ struct SessionBrowser: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { startRename(session: session, folder: folder) }
         .contextMenu { sessionContextMenu(session: session, folder: folder) }
-        .popover(isPresented: Binding(
-            get: { renamingFolder == folder },
-            set: { if !$0 { renamingFolder = nil } }
-        )) {
-            renamePopover(folder: folder)
-        }
     }
 
     @ViewBuilder
     private func sessionContextMenu(session: Session, folder: URL) -> some View {
         Button("Rename…") {
-            renameText = session.name
-            renamingFolder = folder
+            startRename(session: session, folder: folder)
         }
         Button(session.status == .processed ? "Mark Pending" : "Mark Processed") {
             state.setSessionStatus(session.status == .processed ? .pending : .processed, in: folder)
@@ -205,25 +215,14 @@ struct SessionBrowser: View {
         }
     }
 
-    private func renamePopover(folder: URL) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TextField("Session name", text: $renameText)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 260)
-                .onSubmit { saveRename(folder: folder) }
-            HStack {
-                Spacer()
-                Button("Cancel") { renamingFolder = nil }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { saveRename(folder: folder) }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(14)
-        .frame(width: 300)
+    private func startRename(session: Session, folder: URL) {
+        editingNoteID = nil
+        renameText = session.name
+        renamingFolder = folder
+        renameFieldFocus = folder
     }
 
-    private func saveRename(folder: URL) {
+    private func commitRename(folder: URL) {
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             renamingFolder = nil
@@ -498,14 +497,17 @@ struct SessionBrowser: View {
     }
 
     private func noteCard(_ note: Note, folder: URL) -> some View {
+        let isEditing = editingNoteID == note.id
         let color = color(for: note.category)
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(note.category)
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(color, in: Capsule())
-                    .foregroundStyle(.white)
+                if !isEditing {
+                    Text(note.category)
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(color, in: Capsule())
+                        .foregroundStyle(.white)
+                }
                 Image(systemName: note.image != nil ? "photo" : "text.alignleft")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -519,7 +521,18 @@ struct SessionBrowser: View {
                     Text("pending").font(.caption).foregroundStyle(.orange)
                 }
             }
-            Text(note.text).font(.system(size: 16))
+            if isEditing {
+                NoteComposer(text: $editText, category: $editCategory,
+                            categories: state.settings.categories,
+                            onSubmit: { saveEditNote(id: note.id, folder: folder) })
+                Text("⏎ save · esc cancel")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(note.text)
+                    .font(.system(size: 16))
+                    .onTapGesture(count: 2) { startEditingNote(note) }
+            }
             if let imageName = note.image,
                let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)) {
                 Image(nsImage: nsImage)
@@ -536,20 +549,13 @@ struct SessionBrowser: View {
         .padding(12)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
         .contextMenu { noteContextMenu(note, folder: folder) }
-        .popover(isPresented: Binding(
-            get: { editingNoteID == note.id },
-            set: { if !$0 { editingNoteID = nil } }
-        )) {
-            editNotePopover(note: note, folder: folder)
-        }
+        .onExitCommand { if isEditing { editingNoteID = nil } }
     }
 
     @ViewBuilder
     private func noteContextMenu(_ note: Note, folder: URL) -> some View {
         Button("Edit…") {
-            editNoteText = note.text
-            editNoteCategory = note.category
-            editingNoteID = note.id
+            startEditingNote(note)
         }
         Button(note.status == .processed ? "Mark Pending" : "Mark Processed") {
             let newStatus: ProcessingStatus = note.status == .processed ? .pending : .processed
@@ -569,31 +575,21 @@ struct SessionBrowser: View {
         }
     }
 
-    private func editNotePopover(note: Note, folder: URL) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            NoteComposer(text: $editNoteText, category: $editNoteCategory,
-                        categories: state.settings.categories,
-                        onSubmit: { saveEditNote(id: note.id, folder: folder) })
-            HStack {
-                Spacer()
-                Button("Cancel") { editingNoteID = nil }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { saveEditNote(id: note.id, folder: folder) }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(14)
-        .frame(width: 320)
+    private func startEditingNote(_ note: Note) {
+        renamingFolder = nil
+        editText = note.text
+        editCategory = note.category
+        editingNoteID = note.id
     }
 
     private func saveEditNote(id: UUID, folder: URL) {
-        let trimmed = editNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             editingNoteID = nil
             return
         }
-        let text = editNoteText
-        let category = editNoteCategory
+        let text = editText
+        let category = editCategory
         state.updateNote(id: id, in: folder) { note in
             note.text = text
             note.category = category
