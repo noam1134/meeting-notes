@@ -12,12 +12,12 @@ final class FloatingPanel: NSPanel {
         titlebarAppearsTransparent = true
         isMovableByWindowBackground = movableByBackground
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let hostingView = NSHostingView(rootView: view)
-        hostingView.sizingOptions = .preferredContentSize
-        contentView = hostingView
-        // preferredContentSize only takes over after the first layout pass; without an
-        // initial size the panel shows as a zero-height sliver.
-        let fit = hostingView.fittingSize
+        // Window auto-sizing tracks preferredContentSize through the contentViewController
+        // mechanism — a bare NSHostingView contentView never resizes the panel.
+        let host = NSHostingController(rootView: view)
+        host.sizingOptions = .preferredContentSize
+        contentViewController = host
+        let fit = host.sizeThatFits(in: NSSize(width: width, height: 2000))
         setContentSize(NSSize(width: width, height: max(fit.height, 40)))
         standardWindowButton(.closeButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
