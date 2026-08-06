@@ -1,0 +1,27 @@
+name: MeetingNotes
+options:
+  bundleIdPrefix: com.noamchuri
+packages:
+  MeetingNotesCore:
+    path: Core
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
+targets:
+  MeetingNotes:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources: [App/Sources]
+    dependencies:
+      - package: MeetingNotesCore
+      - package: KeyboardShortcuts
+    info:
+      path: App/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleDisplayName: MeetingNotes
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
