@@ -13,10 +13,12 @@ struct CaptureNoteView: View {
     @State private var note = ""
     @State private var category: String
 
-    private let displayWidth: CGFloat = 640
+    private let maxDisplay = CGSize(width: 640, height: 400)
     private var displaySize: CGSize {
-        let scale = displayWidth / CGFloat(image.width)
-        return CGSize(width: displayWidth, height: CGFloat(image.height) * scale)
+        let scale = min(maxDisplay.width / CGFloat(image.width),
+                        maxDisplay.height / CGFloat(image.height),
+                        1.0)
+        return CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
     }
 
     init(image: CGImage, state: AppState, dismiss: @escaping () -> Void) {
@@ -56,7 +58,7 @@ struct CaptureNoteView: View {
             NoteComposer(text: $note, category: $category, categories: state.settings.categories, onSubmit: save)
         }
         .padding(14)
-        .frame(width: displayWidth + 28)
+        .frame(width: max(displaySize.width + 28, 480))
         .onExitCommand(perform: dismiss)   // Esc
     }
 

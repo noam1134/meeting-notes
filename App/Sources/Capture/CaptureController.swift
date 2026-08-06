@@ -49,17 +49,23 @@ enum CaptureController {
     }
 
     static func presentCaptureWindow(image: CGImage, state: AppState) {
-        let displayWidth: CGFloat = 640 + 28
-        // Bottom section, top to bottom: toolbar (~40) + image (scaled) +
-        // NoteComposer (text field ~96 + chip row ~28 + spacing, ~150) +
-        // VStack spacing (2 gaps * 10) + outer padding (2 * 14).
-        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 40 + 150 + 20 + 28
+        // Fit the captured image within a max display box, same logic as
+        // CaptureNoteView.displaySize, so the panel matches the rendered view.
+        let maxDisplay = CGSize(width: 640, height: 400)
+        let scale = min(maxDisplay.width / CGFloat(image.width),
+                        maxDisplay.height / CGFloat(image.height),
+                        1.0)
+        let displaySize = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        let width = max(displaySize.width + 28, 480)
+        // Chrome: toolbar (~40) + single-line NoteComposer + chip row +
+        // VStack spacing + outer padding, ~130 total.
+        let height = displaySize.height + 130
         let panel = FloatingPanel(
             view: CaptureNoteView(image: image, state: state, dismiss: {
                 capturePanel?.close()
                 capturePanel = nil
             }),
-            width: displayWidth, height: height, movableByBackground: false)
+            width: width, height: height, movableByBackground: false)
         capturePanel = panel
         panel.show()
     }

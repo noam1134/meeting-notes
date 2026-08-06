@@ -12,9 +12,9 @@ struct NoteComposer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Note…", text: $text, axis: .vertical)
-                .lineLimit(4...10)
-                .textFieldStyle(.roundedBorder)
-                .frame(minHeight: 96, alignment: .top)
+                .textFieldStyle(.plain)
+                .font(.title3)
+                .lineLimit(1...6)
                 .focused($focused)
                 .onSubmit(onSubmit)
             categoryChips
