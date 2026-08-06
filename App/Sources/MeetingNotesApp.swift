@@ -16,6 +16,10 @@ struct MeetingNotesApp: App {
         Settings {
             SettingsView(state: appState)
         }
+
+        Window("Sessions", id: "browser") {
+            SessionBrowser(state: appState)
+        }
     }
 
     private func installHotkeysOnce() {
