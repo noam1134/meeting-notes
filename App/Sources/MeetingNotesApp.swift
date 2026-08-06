@@ -10,5 +10,9 @@ struct MeetingNotesApp: App {
             MenuContent(state: appState)
         }
         .menuBarExtraStyle(.window)
+
+        Window("Sessions", id: "browser") {
+            SessionBrowser(state: appState)
+        }
     }
 }

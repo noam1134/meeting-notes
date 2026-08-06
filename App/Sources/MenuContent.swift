@@ -4,6 +4,7 @@ import MeetingNotesCore
 struct MenuContent: View {
     @Bindable var state: AppState
     @State private var meetingName = ""
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -20,6 +21,8 @@ struct MenuContent: View {
                     .keyboardShortcut(.defaultAction)
             }
             Divider()
+            Button("Browse Sessions") { openWindow(id: "browser") }
+                .keyboardShortcut("b")
             Button("Open Sessions Folder") {
                 NSWorkspace.shared.open(state.store.rootURL)
             }
