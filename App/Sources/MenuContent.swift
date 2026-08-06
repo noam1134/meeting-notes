@@ -29,6 +29,7 @@ struct MenuContent: View {
                     .foregroundStyle(.red).font(.caption).lineLimit(3)
             }
             Divider()
+            SettingsLink().keyboardShortcut(",")
             Button("Quit") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
