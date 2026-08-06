@@ -6,12 +6,11 @@ struct SettingsView: View {
     @Bindable var state: AppState
     @State private var newCategory = ""
 
-    // QuickNoteView only ever offers ⌘1…⌘9 shortcuts; keep the category
-    // list at or below that so every category stays reachable by hotkey.
-    private static let maxCategories = 9
-
+    // QuickNoteView only ever offers ⌘-digit shortcuts up to
+    // CategoryHotkey.maxShortcutCount; keep the category list at or below
+    // that so every category stays reachable by hotkey.
     private var atCategoryLimit: Bool {
-        state.settings.categories.count >= Self.maxCategories
+        state.settings.categories.count >= CategoryHotkey.maxShortcutCount
     }
 
     var body: some View {
@@ -46,7 +45,7 @@ struct SettingsView: View {
                     .disabled(atCategoryLimit)
                 }
                 if atCategoryLimit {
-                    Text("Maximum of \(Self.maxCategories) categories — each needs its own ⌘-digit shortcut.")
+                    Text("Maximum of \(CategoryHotkey.maxShortcutCount) categories — each needs its own ⌘-digit shortcut.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
