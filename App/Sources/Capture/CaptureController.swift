@@ -26,13 +26,14 @@ enum CaptureController {
         }
     }
 
-    // Task 9 replaces this stub with the annotate+note window.
     static func presentCaptureWindow(image: CGImage, state: AppState) {
-        let rep = NSBitmapImageRep(cgImage: image)
-        guard let png = rep.representation(using: .png, properties: [:]) else { return }
-        if state.activeSession == nil { state.startMeeting(named: nil) }
-        state.addNote(text: "(screenshot)", category: state.settings.categories.first ?? "FYI",
-                      imageData: png)
+        var panel: FloatingPanel!
+        let displayWidth: CGFloat = 640 + 28
+        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 160
+        panel = FloatingPanel(
+            view: CaptureNoteView(image: image, state: state, dismiss: { panel.close() }),
+            width: displayWidth, height: height)
+        panel.show()
     }
 
     private static func showPermissionExplainer() {
