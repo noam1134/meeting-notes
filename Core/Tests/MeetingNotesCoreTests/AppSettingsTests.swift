@@ -25,4 +25,13 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettings.load(from: defaults).categories,
                        AppSettings.defaultCategories)
     }
+
+    func testMorningReminderDefaultsToEnabledWhenUnset() {
+        XCTAssertEqual(AppSettings.load(from: defaults).morningReminderEnabled, true)
+    }
+
+    func testMorningReminderSaveThenLoadRoundTrips() {
+        AppSettings(categories: ["A"], morningReminderEnabled: false).save(to: defaults)
+        XCTAssertEqual(AppSettings.load(from: defaults).morningReminderEnabled, false)
+    }
 }
