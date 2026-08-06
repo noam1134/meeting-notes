@@ -47,10 +47,13 @@ final class ClaudeTerminalManager {
 
         // `acceptEdits` auto-approves file edits and the Trello MCP tools are
         // scoped in via `--allowedTools` (user-confirmed pipeline design);
-        // everything else still prompts. The prompt is passed as an argument,
-        // so claude starts working on it immediately — no pasting.
-        // cd scopes claude's workspace (and trust prompt) to this session.
-        let command = "cd \(Self.shellQuote(folder.path)) && claude --permission-mode acceptEdits --allowedTools \"mcp__trello__*\" \(Self.shellQuote(prompt))"
+        // everything else still prompts. The PROMPT COMES FIRST: the variadic
+        // `--allowedTools` flag swallows trailing positionals, which is why
+        // claude used to start idle — positional-before-flags submits it on
+        // launch (and it queues through the one-time trust dialog).
+        // cwd is the sessions ROOT so trust is accepted once, not per session.
+        let root = folder.deletingLastPathComponent()
+        let command = "cd \(Self.shellQuote(root.path)) && claude \(Self.shellQuote(prompt)) --permission-mode acceptEdits --allowedTools \"mcp__trello__*\""
 
         // SwiftTerm's default PTY environment omits HOME/PATH, so `zsh -l`
         // couldn't source the user's profile and `claude` was never found —
@@ -65,11 +68,16 @@ final class ClaudeTerminalManager {
         return true
     }
 
-    /// Terminates the session's `claude` process (the run stays visible as a
-    /// finished terminal until cleared).
+    /// Kills the session's `claude` process and removes the run (and with it
+    /// the Claude tab) entirely — per user request, Stop means gone.
     func stop(folder: URL) {
-        guard let run = runs[folder], run.running else { return }
-        run.view.process.terminate()
+        guard let run = runs[folder] else { return }
+        if run.running {
+            run.view.process.terminate()
+        }
+        run.view.removeFromSuperview()
+        runs.removeValue(forKey: folder)
+        onChange?()
     }
 
     /// Discards a finished run and its scrollback — the detail pane goes back
@@ -137,6 +145,11 @@ struct TerminalHostView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ container: NSView, context: Context) {
+        // Evict other sessions' terminals — without this the container stacks
+        // every terminal ever shown and the last-added one wins for all sessions.
+        for sub in container.subviews where sub !== terminal {
+            sub.removeFromSuperview()
+        }
         guard terminal.superview !== container else { return }
         terminal.removeFromSuperview()
         terminal.frame = container.bounds

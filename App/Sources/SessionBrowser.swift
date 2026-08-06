@@ -395,6 +395,7 @@ struct SessionBrowser: View {
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
             ClaudeTerminalManager.shared.stop(folder: folder)
+            claudeTabFolders.remove(folder)
         }
     }
 
