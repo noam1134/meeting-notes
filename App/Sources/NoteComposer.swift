@@ -18,7 +18,19 @@ struct NoteComposer: View {
                 .lineLimit(1...6)
                 .focused($focused)
                 .onSubmit(onSubmit)
-                .onChange(of: focused) { _, isFocused in if !isFocused { onFocusLost?() } }
+                .onChange(of: focused) { _, isFocused in
+                    if isFocused {
+                        // macOS selects all prefilled text when the field gains focus;
+                        // put the caret at the end so typing appends, not replaces.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                            if let editor = NSApp.keyWindow?.firstResponder as? NSTextView {
+                                editor.selectedRange = NSRange(location: (editor.string as NSString).length, length: 0)
+                            }
+                        }
+                    } else {
+                        onFocusLost?()
+                    }
+                }
             categoryChips
         }
         .onAppear { if focusOnAppear { focused = true } }

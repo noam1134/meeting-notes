@@ -19,6 +19,9 @@ struct SessionBrowser: View {
     @State private var editText = ""
     @State private var editCategory = ""
     @State private var noteDeleteTarget: NoteDeleteTarget?
+    @State private var editingFolder: URL?
+    @State private var editorFrame: CGRect = .zero
+    @State private var outsideClickMonitor: Any?
 
     enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All", pending = "Pending"
@@ -92,9 +95,14 @@ struct SessionBrowser: View {
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
             state.refresh()
+            installOutsideClickMonitor()
         }
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
+            if let m = outsideClickMonitor {
+                NSEvent.removeMonitor(m)
+                outsideClickMonitor = nil
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Claude edits session.json externally; pick that up without a relaunch.
@@ -148,6 +156,7 @@ struct SessionBrowser: View {
                 if isRenaming {
                     TextField("Session name", text: $renameText)
                         .textFieldStyle(.plain)
+                        .background(editorFrameReader)
                         .focused($renameFieldFocus, equals: folder)
                         .onSubmit { commitRename(folder: folder) }
                         .onExitCommand { renamingFolder = nil }
@@ -182,7 +191,6 @@ struct SessionBrowser: View {
             }
         }
         .padding(.vertical, 2)
-        .simultaneousGesture(TapGesture(count: 2).onEnded { startRename(session: session, folder: folder) })
         .contextMenu { sessionContextMenu(session: session, folder: folder) }
     }
 
@@ -549,15 +557,15 @@ struct SessionBrowser: View {
             if isEditing {
                 NoteComposer(text: $editText, category: $editCategory,
                             categories: state.settings.categories,
-                            onSubmit: { saveEditNote(id: note.id, folder: folder) },
-                            onFocusLost: { saveEditNote(id: note.id, folder: folder) })
+                            onSubmit: { saveEditNote(id: note.id, folder: folder) })
+                    .background(editorFrameReader)
                 Text("⏎ save · esc cancel")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
                 Text(note.text)
                     .font(.system(size: 16))
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note) })
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
             }
             if let imageName = note.image,
                let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)) {
@@ -581,7 +589,7 @@ struct SessionBrowser: View {
     @ViewBuilder
     private func noteContextMenu(_ note: Note, folder: URL) -> some View {
         Button("Edit…") {
-            startEditingNote(note)
+            startEditingNote(note, folder: folder)
         }
         Button(note.status == .processed ? "Mark Pending" : "Mark Processed") {
             let newStatus: ProcessingStatus = note.status == .processed ? .pending : .processed
@@ -601,11 +609,41 @@ struct SessionBrowser: View {
         }
     }
 
-    private func startEditingNote(_ note: Note) {
+    private func startEditingNote(_ note: Note, folder: URL) {
         renamingFolder = nil
         editText = note.text
         editCategory = note.category
+        editingFolder = folder
         editingNoteID = note.id
+    }
+
+    // Focus-loss alone can't detect clicks on non-focusable areas (empty space keeps
+    // the field focused), so commit active inline edits on any click outside the editor.
+    private func installOutsideClickMonitor() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            guard editingNoteID != nil || renamingFolder != nil,
+                  let window = event.window, window.title == "Sessions",
+                  let contentView = window.contentView else { return event }
+            let p = event.locationInWindow
+            let point = CGPoint(x: p.x, y: contentView.bounds.height - p.y)
+            guard !editorFrame.insetBy(dx: -8, dy: -8).contains(point) else { return event }
+            DispatchQueue.main.async {
+                if let folder = renamingFolder { commitRename(folder: folder) }
+                if let id = editingNoteID, let folder = editingFolder {
+                    saveEditNote(id: id, folder: folder)
+                }
+            }
+            return event
+        }
+    }
+
+    private var editorFrameReader: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear { editorFrame = geo.frame(in: .global) }
+                .onChange(of: geo.frame(in: .global)) { _, f in editorFrame = f }
+        }
     }
 
     private func saveEditNote(id: UUID, folder: URL) {
