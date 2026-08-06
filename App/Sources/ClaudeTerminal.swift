@@ -54,12 +54,17 @@ final class ClaudeTerminalManager {
         // launch (and it queues through the one-time trust dialog).
         // cwd is the sessions ROOT so trust is accepted once, not per session.
         let root = folder.deletingLastPathComponent()
-        let command = "cd \(Self.shellQuote(root.path)) && claude \(Self.shellQuote(prompt)) --dangerously-skip-permissions"
+        guard let claudePath = Self.resolveClaudePath() else { return false }
+        let command = "cd \(Self.shellQuote(root.path)) && \(Self.shellQuote(claudePath)) \(Self.shellQuote(prompt)) --dangerously-skip-permissions"
 
         // SwiftTerm's default PTY environment omits HOME/PATH, so `zsh -l`
         // couldn't source the user's profile and `claude` was never found —
         // inherit the app's full environment plus terminal identity.
         var env = ProcessInfo.processInfo.environment
+        // Dock/login-item launches carry the vanilla launchd PATH; make sure
+        // the usual user-binary dirs are present for claude's own subprocesses.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        env["PATH"] = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
         if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
@@ -124,20 +129,35 @@ final class ClaudeTerminalManager {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// `command -v claude` through a login shell, mirroring how the PTY spawn
-    /// resolves the CLI.
     nonisolated static func claudeIsAvailable() -> Bool {
+        resolveClaudePath() != nil
+    }
+
+    /// Absolute path to the `claude` CLI. PATH can't be trusted: Dock/login
+    /// launches get launchd's vanilla PATH, and the install dir (~/.local/bin)
+    /// is only added by interactive shell config. Probe the known locations,
+    /// then fall back to asking an interactive login shell.
+    nonisolated static func resolveClaudePath() -> String? {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        for candidate in ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"] {
+            if fm.isExecutableFile(atPath: candidate) { return candidate }
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "command -v claude"]
-        process.standardOutput = Pipe()
+        process.arguments = ["-lic", "command -v claude"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
         process.standardError = Pipe()
         do {
             try process.run()
             process.waitUntilExit()
-            return process.terminationStatus == 0
+            guard process.terminationStatus == 0 else { return nil }
+            let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (out?.isEmpty == false) ? out : nil
         } catch {
-            return false
+            return nil
         }
     }
 }
