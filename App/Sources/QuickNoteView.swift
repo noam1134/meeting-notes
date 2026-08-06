@@ -26,10 +26,19 @@ struct QuickNoteView: View {
                 .onSubmit(save)
             HStack(spacing: 6) {
                 ForEach(Array(state.settings.categories.enumerated()), id: \.element) { i, cat in
-                    Button("\(i + 1) \(cat)") { category = cat }
-                        .buttonStyle(.bordered)
-                        .tint(category == cat ? .accentColor : .secondary)
-                        .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command])
+                    if i < 9 {
+                        // Character("\(i + 1)") is only ever a single digit 1-9 here;
+                        // Character(_:) traps on multi-character strings, so indices
+                        // >= 9 (a 10th+ category) must never reach it.
+                        Button("\(i + 1) \(cat)") { category = cat }
+                            .buttonStyle(.bordered)
+                            .tint(category == cat ? .accentColor : .secondary)
+                            .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command])
+                    } else {
+                        Button("\(i + 1) \(cat)") { category = cat }
+                            .buttonStyle(.bordered)
+                            .tint(category == cat ? .accentColor : .secondary)
+                    }
                 }
             }.font(.caption)
         }
