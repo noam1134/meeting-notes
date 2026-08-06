@@ -12,6 +12,13 @@ struct SessionBrowser: View {
     @State private var showAddNotePopover = false
     @State private var addNoteText = ""
     @State private var addNoteCategory = ""
+    @State private var renamingFolder: URL?
+    @State private var renameText = ""
+    @State private var sessionDeleteTarget: SessionDeleteTarget?
+    @State private var editingNoteID: UUID?
+    @State private var editNoteText = ""
+    @State private var editNoteCategory = ""
+    @State private var noteDeleteTarget: NoteDeleteTarget?
 
     enum StatusFilter: String, CaseIterable, Identifiable {
         case all = "All", pending = "Pending"
@@ -21,6 +28,17 @@ struct SessionBrowser: View {
     private struct PreviewImage: Identifiable {
         let id = UUID()
         let image: NSImage
+    }
+
+    private struct SessionDeleteTarget: Identifiable {
+        let id: URL
+        let name: String
+        var folder: URL { id }
+    }
+
+    private struct NoteDeleteTarget: Identifiable {
+        let id: UUID
+        let folder: URL
     }
 
     var body: some View {
@@ -47,6 +65,34 @@ struct SessionBrowser: View {
         }
         .sheet(item: $previewImage) { wrapper in
             ImagePreview(image: wrapper.image) { previewImage = nil }
+        }
+        .confirmationDialog(
+            "Move '\(sessionDeleteTarget?.name ?? "")' to Trash? Claude-created Trello cards are unaffected.",
+            isPresented: Binding(
+                get: { sessionDeleteTarget != nil },
+                set: { if !$0 { sessionDeleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Move to Trash", role: .destructive) {
+                if let target = sessionDeleteTarget { performDeleteSession(target.folder) }
+                sessionDeleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { sessionDeleteTarget = nil }
+        }
+        .confirmationDialog(
+            "Delete this note? This cannot be undone.",
+            isPresented: Binding(
+                get: { noteDeleteTarget != nil },
+                set: { if !$0 { noteDeleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let target = noteDeleteTarget { state.deleteNote(id: target.id, in: target.folder) }
+                noteDeleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { noteDeleteTarget = nil }
         }
         .onAppear {
             // Switch to .regular first (dock icon appears) so activation
@@ -80,7 +126,7 @@ struct SessionBrowser: View {
                     ForEach(groupedSections, id: \.title) { group in
                         Section(group.title) {
                             ForEach(group.rows) { row in
-                                sidebarRow(row.session).tag(row.id)
+                                sidebarRow(row.session, folder: row.id).tag(row.id)
                             }
                         }
                     }
@@ -97,7 +143,7 @@ struct SessionBrowser: View {
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
     }
 
-    private func sidebarRow(_ session: Session) -> some View {
+    private func sidebarRow(_ session: Session, folder: URL) -> some View {
         let pendingCount = session.notes.filter { $0.status == .pending }.count
         let presentCategories = Set(session.notes.map(\.category))
         let categoryDots = state.settings.categories.filter { presentCategories.contains($0) }.prefix(5)
@@ -130,6 +176,66 @@ struct SessionBrowser: View {
             }
         }
         .padding(.vertical, 2)
+        .contextMenu { sessionContextMenu(session: session, folder: folder) }
+        .popover(isPresented: Binding(
+            get: { renamingFolder == folder },
+            set: { if !$0 { renamingFolder = nil } }
+        )) {
+            renamePopover(folder: folder)
+        }
+    }
+
+    @ViewBuilder
+    private func sessionContextMenu(session: Session, folder: URL) -> some View {
+        Button("Rename…") {
+            renameText = session.name
+            renamingFolder = folder
+        }
+        Button(session.status == .processed ? "Mark Pending" : "Mark Processed") {
+            state.setSessionStatus(session.status == .processed ? .pending : .processed, in: folder)
+        }
+        if session.isActive {
+            Button("End Meeting") { state.endMeeting() }
+        }
+        Button("Copy for Claude") { copyForClaude(folder: folder) }
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+        Divider()
+        Button("Delete Session…", role: .destructive) {
+            sessionDeleteTarget = SessionDeleteTarget(id: folder, name: session.name)
+        }
+    }
+
+    private func renamePopover(folder: URL) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("Session name", text: $renameText)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit { saveRename(folder: folder) }
+            HStack {
+                Spacer()
+                Button("Cancel") { renamingFolder = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { saveRename(folder: folder) }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 300)
+    }
+
+    private func saveRename(folder: URL) {
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            renamingFolder = nil
+            return
+        }
+        state.renameSession(in: folder, to: trimmed)
+        renamingFolder = nil
+    }
+
+    private func performDeleteSession(_ folder: URL) {
+        state.deleteSession(in: folder)
+        if selected == folder { selected = nil }
     }
 
     private func unreadableSidebarRow(_ folder: URL) -> some View {
@@ -137,6 +243,13 @@ struct SessionBrowser: View {
             Text(folder.lastPathComponent).lineLimit(1)
         } icon: {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        }
+        .contextMenu {
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+            Divider()
+            Button("Delete Session…", role: .destructive) {
+                sessionDeleteTarget = SessionDeleteTarget(id: folder, name: folder.lastPathComponent)
+            }
         }
     }
 
@@ -422,6 +535,78 @@ struct SessionBrowser: View {
         }
         .padding(12)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .contextMenu { noteContextMenu(note, folder: folder) }
+        .popover(isPresented: Binding(
+            get: { editingNoteID == note.id },
+            set: { if !$0 { editingNoteID = nil } }
+        )) {
+            editNotePopover(note: note, folder: folder)
+        }
+    }
+
+    @ViewBuilder
+    private func noteContextMenu(_ note: Note, folder: URL) -> some View {
+        Button("Edit…") {
+            editNoteText = note.text
+            editNoteCategory = note.category
+            editingNoteID = note.id
+        }
+        Button(note.status == .processed ? "Mark Pending" : "Mark Processed") {
+            let newStatus: ProcessingStatus = note.status == .processed ? .pending : .processed
+            state.updateNote(id: note.id, in: folder) { $0.status = newStatus }
+        }
+        Button("Copy Text") {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(note.text, forType: .string)
+        }
+        if note.image != nil {
+            Button("Copy Screenshot") { copyScreenshot(note: note, folder: folder) }
+        }
+        Divider()
+        Button("Delete Note…", role: .destructive) {
+            noteDeleteTarget = NoteDeleteTarget(id: note.id, folder: folder)
+        }
+    }
+
+    private func editNotePopover(note: Note, folder: URL) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NoteComposer(text: $editNoteText, category: $editNoteCategory,
+                        categories: state.settings.categories,
+                        onSubmit: { saveEditNote(id: note.id, folder: folder) })
+            HStack {
+                Spacer()
+                Button("Cancel") { editingNoteID = nil }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { saveEditNote(id: note.id, folder: folder) }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 320)
+    }
+
+    private func saveEditNote(id: UUID, folder: URL) {
+        let trimmed = editNoteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            editingNoteID = nil
+            return
+        }
+        let text = editNoteText
+        let category = editNoteCategory
+        state.updateNote(id: id, in: folder) { note in
+            note.text = text
+            note.category = category
+        }
+        editingNoteID = nil
+    }
+
+    private func copyScreenshot(note: Note, folder: URL) {
+        guard let imageName = note.image,
+              let data = try? Data(contentsOf: folder.appendingPathComponent(imageName)) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(data, forType: .png)
     }
 
     private func color(for category: String) -> Color {

@@ -42,6 +42,26 @@ final class AppState {
         run { try self.store.addNote(text: text, category: category, imageData: nil, to: folder) }
     }
 
+    func updateNote(id: UUID, in folder: URL, mutate: @escaping (inout Note) -> Void) {
+        run { try self.store.updateNote(id: id, in: folder, mutate: mutate) }
+    }
+
+    func deleteNote(id: UUID, in folder: URL) {
+        run { try self.store.deleteNote(id: id, in: folder) }
+    }
+
+    func renameSession(in folder: URL, to name: String) {
+        run { try self.store.renameSession(in: folder, to: name) }
+    }
+
+    func setSessionStatus(_ status: ProcessingStatus, in folder: URL) {
+        run { try self.store.setSessionStatus(status, in: folder) }
+    }
+
+    func deleteSession(in folder: URL) {
+        run { try self.store.deleteSession(in: folder) }
+    }
+
     private func run(_ body: () throws -> Void) {
         do {
             try body()
