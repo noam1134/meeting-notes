@@ -41,6 +41,7 @@ final class ClaudeTerminalManager {
         runs[folder]?.view.removeFromSuperview()   // replace a finished run
 
         let view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        Self.applyGhosttyStyle(to: view)
         let delegate = RunDelegate(folder: folder)
         view.processDelegate = delegate
         runs[folder] = Run(view: view, delegate: delegate)
@@ -96,6 +97,27 @@ final class ClaudeTerminalManager {
         onChange?()
     }
 
+    /// Ghostty's default look (the user's terminal of choice): #282c34
+    /// background, white foreground, Tomorrow Night ANSI palette, and the
+    /// system monospaced font (closest always-available match to Ghostty's
+    /// bundled JetBrains Mono).
+    private static let ghosttyANSI: [UInt32] = [
+        0x1d1f21, 0xcc6666, 0xb5bd68, 0xf0c674, 0x81a2be, 0xb294bb, 0x8abeb7, 0xc5c8c6,
+        0x666666, 0xd54e53, 0xb9ca4a, 0xe7c547, 0x7aa6da, 0xc397d8, 0x70c0b1, 0xeaeaea,
+    ]
+
+    static func applyGhosttyStyle(to view: LocalProcessTerminalView) {
+        view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        view.nativeBackgroundColor = NSColor(srgbRed: 0x28 / 255.0, green: 0x2c / 255.0,
+                                             blue: 0x34 / 255.0, alpha: 1)
+        view.nativeForegroundColor = .white
+        view.installColors(ghosttyANSI.map { hex in
+            SwiftTerm.Color(red: UInt16((hex >> 16) & 0xFF) * 257,
+                            green: UInt16((hex >> 8) & 0xFF) * 257,
+                            blue: UInt16(hex & 0xFF) * 257)
+        })
+    }
+
     /// Wraps `text` in single quotes for safe embedding in a `zsh -c` command,
     /// escaping any single quotes it contains.
     nonisolated static func shellQuote(_ text: String) -> String {
@@ -138,23 +160,41 @@ final class RunDelegate: NSObject, LocalProcessTerminalViewDelegate {
 }
 
 /// Hosts a long-lived `LocalProcessTerminalView` inside SwiftUI, reparenting it
-/// when the displayed session changes.
+/// when the displayed session changes. A layout-driven container keeps the
+/// terminal inset (Ghostty-style padding) at every size — computing insets
+/// from the pre-layout zero bounds gave SwiftTerm a negative frame and a
+/// garbage PTY size, which rendered as a blank terminal.
+final class TerminalContainerView: NSView {
+    weak var terminal: NSView?
+    override func layout() {
+        super.layout()
+        terminal?.frame = bounds.insetBy(dx: 10, dy: 8)
+    }
+}
+
 struct TerminalHostView: NSViewRepresentable {
     let terminal: LocalProcessTerminalView
 
-    func makeNSView(context: Context) -> NSView { NSView() }
+    func makeNSView(context: Context) -> NSView {
+        let container = TerminalContainerView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(srgbRed: 0x28 / 255.0, green: 0x2c / 255.0,
+                                                   blue: 0x34 / 255.0, alpha: 1).cgColor
+        return container
+    }
 
     func updateNSView(_ container: NSView, context: Context) {
+        guard let container = container as? TerminalContainerView else { return }
         // Evict other sessions' terminals — without this the container stacks
         // every terminal ever shown and the last-added one wins for all sessions.
         for sub in container.subviews where sub !== terminal {
             sub.removeFromSuperview()
         }
+        container.terminal = terminal
         guard terminal.superview !== container else { return }
         terminal.removeFromSuperview()
-        terminal.frame = container.bounds
-        terminal.autoresizingMask = [.width, .height]
         container.addSubview(terminal)
+        container.needsLayout = true
         DispatchQueue.main.async {
             container.window?.makeFirstResponder(terminal)
         }

@@ -19,13 +19,13 @@ final class FirstMouseHostingView<V: View>: NSHostingView<V> {
     }
 }
 
-final class RegionSelectWindow: NSWindow {
+final class RegionSelectWindow: NSPanel {
     private var finished = false
     private var onSelect: ((CGImage?) -> Void)?
 
     init(screenshot: CGImage, screen: NSScreen, onSelect: @escaping (CGImage?) -> Void) {
         let screenFrame = screen.frame
-        super.init(contentRect: screenFrame, styleMask: [.borderless],
+        super.init(contentRect: screenFrame, styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         self.onSelect = onSelect
         level = .screenSaver
@@ -43,7 +43,6 @@ final class RegionSelectWindow: NSWindow {
 
     func begin() {
         NSCursor.crosshair.push()
-        NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
     }
 
