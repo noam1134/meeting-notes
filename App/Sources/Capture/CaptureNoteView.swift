@@ -34,8 +34,9 @@ struct CaptureNoteView: View {
                     Image(systemName: "rectangle").tag(AnnotationTool.box)
                     Image(systemName: "arrow.up.right").tag(AnnotationTool.arrow)
                     Image(systemName: "textformat").tag(AnnotationTool.text)
+                    Image(systemName: "scribble").tag(AnnotationTool.pen)
                 }
-                .pickerStyle(.segmented).frame(width: 140)
+                .pickerStyle(.segmented).frame(width: 180)
                 if tool == .text {
                     TextField("Label text — then click image", text: $textLabel)
                         .frame(width: 200)
@@ -48,8 +49,10 @@ struct CaptureNoteView: View {
 
             canvas
 
-            TextField("Note…", text: $note)
+            TextField("Note…", text: $note, axis: .vertical)
+                .lineLimit(4...10)
                 .textFieldStyle(.roundedBorder)
+                .frame(minHeight: 96, alignment: .top)
                 .focused($noteFocused)
                 .onSubmit(save)
 
@@ -85,12 +88,26 @@ struct CaptureNoteView: View {
         .gesture(DragGesture(minimumDistance: 2)
             .onChanged { v in
                 guard tool != .text else { return }
-                draft = AnnotationShape(id: draft?.id ?? UUID(), tool: tool,
-                                        start: draft?.start ?? v.startLocation,
-                                        end: v.location, label: "")
+                if tool == .pen {
+                    var points = draft?.points ?? [v.startLocation]
+                    points.append(v.location)
+                    draft = AnnotationShape(id: draft?.id ?? UUID(), tool: tool,
+                                            start: v.startLocation, end: v.location,
+                                            label: "", points: points)
+                } else {
+                    draft = AnnotationShape(id: draft?.id ?? UUID(), tool: tool,
+                                            start: draft?.start ?? v.startLocation,
+                                            end: v.location, label: "")
+                }
             }
             .onEnded { _ in
-                if let draft { shapes.append(draft) }
+                if let draft {
+                    if draft.tool == .pen {
+                        if draft.points.count >= 2 { shapes.append(draft) }
+                    } else {
+                        shapes.append(draft)
+                    }
+                }
                 draft = nil
             })
         .onTapGesture { location in
@@ -125,6 +142,10 @@ struct CaptureNoteView: View {
             ctx.draw(Text(shape.label).font(.system(size: 14, weight: .bold))
                         .foregroundColor(.red),
                      at: shape.start, anchor: .topLeading)
+        case .pen:
+            var path = Path()
+            path.addLines(shape.points)
+            ctx.stroke(path, with: stroke, lineWidth: 2)
         }
     }
 

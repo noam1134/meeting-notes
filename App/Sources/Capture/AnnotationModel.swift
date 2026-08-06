@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-enum AnnotationTool { case box, arrow, text }
+enum AnnotationTool { case box, arrow, text, pen }
 
 struct AnnotationShape: Identifiable {
     let id: UUID
@@ -9,6 +9,7 @@ struct AnnotationShape: Identifiable {
     var start: CGPoint
     var end: CGPoint
     var label: String
+    var points: [CGPoint] = []
 }
 
 enum AnnotationRenderer {
@@ -56,6 +57,14 @@ enum AnnotationRenderer {
                 let line = CTLineCreateWithAttributedString(str)
                 ctx.textPosition = a
                 CTLineDraw(line, ctx)
+            case .pen:
+                guard shape.points.count >= 2 else { continue }
+                ctx.setLineJoin(.round)
+                ctx.setLineCap(.round)
+                let pts = shape.points.map(pt)
+                ctx.move(to: pts[0])
+                for p in pts.dropFirst() { ctx.addLine(to: p) }
+                ctx.strokePath()
             }
         }
         guard let out = ctx.makeImage() else { return nil }

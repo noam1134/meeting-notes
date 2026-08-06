@@ -50,7 +50,7 @@ enum CaptureController {
 
     static func presentCaptureWindow(image: CGImage, state: AppState) {
         let displayWidth: CGFloat = 640 + 28
-        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 160
+        let height = CGFloat(image.height) * (640 / CGFloat(image.width)) + 160 + 80
         let panel = FloatingPanel(
             view: CaptureNoteView(image: image, state: state, dismiss: {
                 capturePanel?.close()
