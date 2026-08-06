@@ -15,6 +15,13 @@ import SwiftUI
 // images smaller than the viewport stay centered instead of pinned to a
 // corner. The container itself never grows with zoom — zooming past 1 only
 // scrolls inside the fixed viewport.
+//
+// The root `.frame` uses `maxWidth`/`maxHeight: .infinity` so the panel is
+// user-resizable. That means PreviewWindowController cannot recover the
+// fitted size via `NSHostingController.sizeThatFits(in:)` (see
+// `idealPanelSize(for:)`'s doc comment) — it calls that static function
+// instead, which duplicates none of the sizing math since it shares the
+// same static helpers as the instance's `containerSize`.
 struct ImagePreview: View {
     let image: NSImage
     var dismiss: () -> Void
@@ -24,30 +31,66 @@ struct ImagePreview: View {
 
     private let zoomRange: ClosedRange<CGFloat> = 0.25...4.0
     private let zoomStep: CGFloat = 0.25
-    private let toolbarHeight: CGFloat = 44
-    private let minWidth: CGFloat = 360
+    private static let toolbarHeight: CGFloat = 44
+    private static let minWidth: CGFloat = 360
 
     private var screenFrame: CGRect {
         NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1200, height: 800)
     }
 
     private var cap: CGSize {
-        CGSize(width: screenFrame.width * 0.85, height: screenFrame.height * 0.85)
+        Self.cap(forScreenFrame: screenFrame)
     }
 
     // True aspect-correct image size at zoom == 1, never larger than `cap`.
     private var fittedImageSize: CGSize {
-        let imageSize = image.size
-        guard imageSize.width > 0, imageSize.height > 0 else { return cap }
-        let scale = min(cap.width / imageSize.width, cap.height / imageSize.height, 1)
-        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        Self.fittedImageSize(image: image, cap: cap)
     }
 
     // Sheet/viewport size: hugs the fitted image, but never narrower than
     // `minWidth` so the zoom toolbar always fits. Images narrower than that
     // are centered inside the wider viewport.
     private var containerSize: CGSize {
+        Self.containerSize(fittedImageSize: fittedImageSize)
+    }
+
+    // Static, pure-function versions of the sizing math above, factored out
+    // so `idealPanelSize(for:)` can compute the same fitted size
+    // PreviewWindowController needs *without* going through SwiftUI layout
+    // (see idealPanelSize's doc comment for why that matters).
+    private static func cap(forScreenFrame screenFrame: CGRect) -> CGSize {
+        CGSize(width: screenFrame.width * 0.85, height: screenFrame.height * 0.85)
+    }
+
+    private static func fittedImageSize(image: NSImage, cap: CGSize) -> CGSize {
+        let imageSize = image.size
+        guard imageSize.width > 0, imageSize.height > 0 else { return cap }
+        let scale = min(cap.width / imageSize.width, cap.height / imageSize.height, 1)
+        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+    }
+
+    private static func containerSize(fittedImageSize: CGSize) -> CGSize {
         CGSize(width: max(fittedImageSize.width, minWidth), height: fittedImageSize.height)
+    }
+
+    // The panel size PreviewWindowController should open at for `image` on
+    // the current main screen. Computed directly here rather than inferred
+    // via `NSHostingController.sizeThatFits(in:)`: this view's root `.frame`
+    // has `maxWidth`/`maxHeight: .infinity` (so the panel can be resized),
+    // and under SwiftUI's proposal-based layout a flexible frame like that
+    // only falls back to `idealWidth`/`idealHeight` when the *incoming
+    // proposal* is nil. `sizeThatFits(in:)` never proposes nil — even
+    // proposing `.infinity` in both dimensions resolves to a concrete
+    // "infinite" proposal rather than nil (verified empirically: it returns
+    // `(inf, inf)`), and the greedy `Color`/`GeometryReader` inside report
+    // back however much space they were proposed. So any proposal-based
+    // query returns close to the full proposed size, not the fitted content
+    // size. Computing it directly here sidesteps that entirely.
+    static func idealPanelSize(for image: NSImage) -> NSSize {
+        let screenFrame = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let fitted = fittedImageSize(image: image, cap: cap(forScreenFrame: screenFrame))
+        let container = containerSize(fittedImageSize: fitted)
+        return NSSize(width: container.width, height: container.height + toolbarHeight)
     }
 
     var body: some View {
@@ -75,8 +118,8 @@ struct ImagePreview: View {
                     .onEnded { _ in lastZoom = zoom }
             )
         }
-        .frame(minWidth: minWidth, idealWidth: containerSize.width, maxWidth: .infinity,
-               idealHeight: containerSize.height + toolbarHeight, maxHeight: .infinity)
+        .frame(minWidth: Self.minWidth, idealWidth: containerSize.width, maxWidth: .infinity,
+               idealHeight: containerSize.height + Self.toolbarHeight, maxHeight: .infinity)
         .onExitCommand(perform: dismiss)
     }
 

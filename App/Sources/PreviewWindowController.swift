@@ -17,8 +17,7 @@ final class PreviewWindowController {
         let host = NSHostingController(rootView: ImagePreview(image: image) { [weak p] in p?.close() })
         host.safeAreaRegions = []
         p.contentViewController = host
-        let fit = host.sizeThatFits(in: NSSize(width: 4000, height: 4000))
-        p.setContentSize(fit)
+        p.setContentSize(ImagePreview.idealPanelSize(for: image))
         p.center()
         p.onClose = { [weak self] in self?.panel = nil }
         panel = p
