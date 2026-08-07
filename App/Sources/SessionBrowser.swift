@@ -501,22 +501,28 @@ struct SessionBrowser: View {
                 showAddNotePopover = true
             } label: {
                 Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
             }
+            .buttonStyle(SoftButtonStyle(iconOnly: true))
             .keyboardShortcut("n", modifiers: [.command])
+            .help("Add note (⌘N)")
             .popover(isPresented: $showAddNotePopover) {
                 addNotePopover(folder: folder)
             }
             Button {
                 copyForClaude(folder: folder)
             } label: {
-                Label("Copy for Claude", systemImage: "doc.on.clipboard")
+                Label("Copy", systemImage: "doc.on.clipboard")
             }
+            .buttonStyle(SoftButtonStyle())
+            .help("Copy the processing prompt for Claude")
             Button {
                 processWithClaude(session: session, folder: folder)
             } label: {
-                Label("Process with Claude", systemImage: "terminal")
+                Label("Process with Claude", systemImage: "sparkles")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(AccentButtonStyle())
             .disabled(session.status == .processed)
         }
         .padding()
@@ -713,15 +719,20 @@ struct SessionBrowser: View {
                 }
             }
             if isEditing {
-                NoteComposer(text: $editText, category: $editCategory,
-                            categories: state.settings.categories,
-                            onSubmit: { saveEditNote(id: note.id, folder: folder) },
-                            chipsAboveField: true)
-                    .onHover { editorHovered = $0 }
-                Text("⏎ save · esc cancel")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                noteThumbnail(note, folder: folder)
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        NoteComposer(text: $editText, category: $editCategory,
+                                    categories: state.settings.categories,
+                                    onSubmit: { saveEditNote(id: note.id, folder: folder) },
+                                    chipsAboveField: true)
+                            .onHover { editorHovered = $0 }
+                        Text("⏎ save · esc cancel")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    noteThumbnail(note, folder: folder)
+                }
             } else {
                 // Two columns: text left, screenshot right.
                 HStack(alignment: .top, spacing: 14) {
@@ -741,7 +752,9 @@ struct SessionBrowser: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.background.secondary)
                 .overlay(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.035)))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(isEditing ? Color.accentColor.opacity(0.55) : Color(nsColor: .separatorColor).opacity(0.6),
+                                  lineWidth: isEditing ? 1.5 : 1))
                 .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
         )
 
@@ -893,4 +906,50 @@ extension Notification.Name {
     /// Posted by the app delegate when a "Claude needs you" notification is
     /// clicked — the browser selects that session and shows its Claude tab.
     static let mnOpenSession = Notification.Name("mnOpenSession")
+}
+
+
+/// Quiet pill button — subtle fill, hairline border, gentle hover.
+private struct SoftButtonStyle: ButtonStyle {
+    var iconOnly = false
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, iconOnly ? 0 : 10)
+            .padding(.vertical, iconOnly ? 0 : 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : (hovering ? 0.11 : 0.07)))
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.primary.opacity(0.09), lineWidth: 1))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// Primary action pill — accent fill, white label.
+private struct AccentButtonStyle: ButtonStyle {
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Color.accentColor.opacity(configuration.isPressed ? 0.75 : (hovering ? 1.0 : 0.9)))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
 }
