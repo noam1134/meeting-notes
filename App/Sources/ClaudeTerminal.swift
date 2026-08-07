@@ -140,8 +140,27 @@ final class ClaudeTerminalManager {
         0x666666, 0xd54e53, 0xb9ca4a, 0xe7c547, 0x7aa6da, 0xc397d8, 0x70c0b1, 0xeaeaea,
     ]
 
+    // MARK: Font zoom (⌘+ / ⌘− / ⌘0 while a terminal is focused)
+
+    private static let fontSizeKey = "terminalFontSize"
+    static var terminalFontSize: CGFloat {
+        let stored = UserDefaults.standard.double(forKey: fontSizeKey)
+        return stored > 0 ? CGFloat(stored) : 13
+    }
+
+    func adjustFontSize(by delta: CGFloat) { setFontSize(Self.terminalFontSize + delta) }
+    func resetFontSize() { setFontSize(13) }
+
+    private func setFontSize(_ size: CGFloat) {
+        let clamped = min(max(size, 9), 24)
+        UserDefaults.standard.set(Double(clamped), forKey: Self.fontSizeKey)
+        for run in runs.values {
+            run.view.font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+        }
+    }
+
     static func applyGhosttyStyle(to view: LocalProcessTerminalView) {
-        view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        view.font = NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
         view.nativeBackgroundColor = NSColor(srgbRed: 0x28 / 255.0, green: 0x2c / 255.0,
                                              blue: 0x34 / 255.0, alpha: 1)
         view.nativeForegroundColor = .white

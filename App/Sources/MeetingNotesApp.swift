@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftTerm
 import UserNotifications
 import ServiceManagement
 
@@ -6,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     static var state: AppState?          // assigned in MeetingNotesApp.init
     private var rightClickMonitor: Any?
     private var shiftReturnMonitor: Any?
+    private var terminalZoomMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -34,6 +36,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let button else { return event }
             button.performClick(nil)
             return nil   // swallow the right-click
+        }
+
+        terminalZoomMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            guard event.modifierFlags.contains(.command),
+                  let chars = event.charactersIgnoringModifiers,
+                  ["+", "=", "-", "0"].contains(chars),
+                  NSApp.keyWindow?.firstResponder is TerminalView else { return event }
+            switch chars {
+            case "-":
+                ClaudeTerminalManager.shared.adjustFontSize(by: -1)
+            case "0":
+                ClaudeTerminalManager.shared.resetFontSize()
+            default:
+                ClaudeTerminalManager.shared.adjustFontSize(by: 1)
+            }
+            return nil
         }
 
         shiftReturnMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
