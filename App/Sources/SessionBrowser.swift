@@ -741,12 +741,7 @@ struct SessionBrowser: View {
                 .fill(.background.secondary)
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.45), lineWidth: 1))
         )
-        // Category color as a quiet left accent stripe instead of a bold chip.
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12)
-                .fill(color.opacity(0.8))
-                .frame(width: 3)
-        }
+
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
     }
