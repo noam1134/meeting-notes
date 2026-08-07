@@ -196,6 +196,17 @@ struct SessionBrowser: View {
                 }
             }
             Spacer()
+            // Live Claude state, visible from anywhere: spinner = working,
+            // orange exclamation = waiting for the user's answer.
+            if ClaudeTerminalManager.shared.isRunning(folder) {
+                if ClaudeTerminalManager.shared.isAwaitingInput(folder) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.body.bold())
+                } else {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                }
+            }
             if session.status == .processed {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             } else if pendingCount > 0 {
