@@ -15,16 +15,24 @@ final class ClaudeTerminalManager {
     final class Run {
         let view: LocalProcessTerminalView
         let delegate: RunDelegate
+        let sessionName: String
         var running = true
-        init(view: LocalProcessTerminalView, delegate: RunDelegate) {
+        /// Claude Code broadcasts its state through terminal titles: a braille
+        /// spinner (U+2800…U+28FF) while working, "✳" when idle awaiting input.
+        var wasBusy = false
+        init(view: LocalProcessTerminalView, delegate: RunDelegate, sessionName: String) {
             self.view = view
             self.delegate = delegate
+            self.sessionName = sessionName
         }
     }
 
     private(set) var runs: [URL: Run] = [:]
     /// Assigned by SwiftUI (SessionBrowser) to refresh when runs start/end.
     var onChange: (() -> Void)?
+    /// Fired when a working run goes idle — Claude finished or is waiting on
+    /// an answer. The browser decides whether that warrants a notification.
+    var onNeedsAttention: ((URL, String) -> Void)?
 
     func terminal(for folder: URL) -> LocalProcessTerminalView? { runs[folder]?.view }
     func hasRun(_ folder: URL) -> Bool { runs[folder] != nil }
@@ -34,7 +42,7 @@ final class ClaudeTerminalManager {
     /// just switches to the Claude tab). Returns `false` only when the `claude`
     /// CLI can't be found on the user's PATH.
     @discardableResult
-    func start(folder: URL, prompt: String) -> Bool {
+    func start(folder: URL, sessionName: String, prompt: String) -> Bool {
         if let run = runs[folder], run.running { return true }
         guard Self.claudeIsAvailable() else { return false }
 
@@ -44,7 +52,7 @@ final class ClaudeTerminalManager {
         Self.applyGhosttyStyle(to: view)
         let delegate = RunDelegate(folder: folder)
         view.processDelegate = delegate
-        runs[folder] = Run(view: view, delegate: delegate)
+        runs[folder] = Run(view: view, delegate: delegate, sessionName: sessionName)
 
         // `acceptEdits` auto-approves file edits and the Trello MCP tools are
         // scoped in via `--allowedTools` (user-confirmed pipeline design);
@@ -93,6 +101,17 @@ final class ClaudeTerminalManager {
         run.view.removeFromSuperview()
         runs.removeValue(forKey: folder)
         onChange?()
+    }
+
+    fileprivate func titleChanged(folder: URL, title: String) {
+        guard let run = runs[folder], run.running else { return }
+        let busy = title.unicodeScalars.first.map { (0x2800...0x28FF).contains(Int($0.value)) } ?? false
+        if busy {
+            run.wasBusy = true
+        } else if run.wasBusy, title.hasPrefix("\u{2733}") {   // ✳ idle marker
+            run.wasBusy = false
+            onNeedsAttention?(folder, run.sessionName)
+        }
     }
 
     fileprivate func processEnded(folder: URL, exitCode: Int32?) {
@@ -169,7 +188,12 @@ final class RunDelegate: NSObject, LocalProcessTerminalViewDelegate {
     init(folder: URL) { self.folder = folder }
 
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+        let folder = self.folder
+        DispatchQueue.main.async {
+            ClaudeTerminalManager.shared.titleChanged(folder: folder, title: title)
+        }
+    }
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         let folder = self.folder

@@ -99,6 +99,13 @@ struct SessionBrowser: View {
             state.refresh()
             installOutsideClickMonitor()
             ClaudeTerminalManager.shared.onChange = { terminalRevision &+= 1 }
+            ClaudeTerminalManager.shared.onNeedsAttention = { folder, name in
+                // Skip the ping when the user is already looking at this terminal.
+                let alreadyWatching = NSApp.isActive && selected == folder && claudeTabFolders.contains(folder)
+                if !alreadyWatching {
+                    NotificationManager.notifyClaudeNeedsYou(sessionName: name, folderPath: folder.path)
+                }
+            }
         }
         .onDisappear {
             NSApp.setActivationPolicy(.accessory)
@@ -113,6 +120,12 @@ struct SessionBrowser: View {
         }
         .onChange(of: selected) {
             selectedCategory = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .mnOpenSession)) { note in
+            if let folder = note.object as? URL {
+                selected = folder
+                claudeTabFolders.insert(folder)
+            }
         }
     }
 
@@ -509,6 +522,7 @@ struct SessionBrowser: View {
     private func processWithClaude(session: Session, folder: URL) {
         let started = ClaudeTerminalManager.shared.start(
             folder: folder,
+            sessionName: session.name,
             prompt: Self.processingPrompt(for: folder))
         if started {
             claudeTabFolders.insert(folder)
@@ -761,4 +775,11 @@ struct SessionBrowser: View {
         let end = session.endedAt.map(timeString) ?? "now"
         return "\(start)–\(end) · \(dateOnlyString(session.startedAt))"
     }
+}
+
+
+extension Notification.Name {
+    /// Posted by the app delegate when a "Claude needs you" notification is
+    /// clicked — the browser selects that session and shows its Claude tab.
+    static let mnOpenSession = Notification.Name("mnOpenSession")
 }

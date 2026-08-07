@@ -1,12 +1,14 @@
 import SwiftUI
+import UserNotifications
 import ServiceManagement
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     static var state: AppState?          // assigned in MeetingNotesApp.init
     private var rightClickMonitor: Any?
     private var shiftReturnMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         if let state = Self.state { BrowserWindowController.shared.show(state: state) }
 
         // One-time self-registration as a login item. Only fires the first time
@@ -53,6 +55,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     keyCode: 36) ?? event
         }
     }
+    // Show banners even while the app is frontmost (the browser may be on a
+    // different session than the one Claude is asking about).
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let path = response.notification.request.content.userInfo["sessionFolder"] as? String {
+            let folder = URL(fileURLWithPath: path)
+            DispatchQueue.main.async {
+                if let state = AppDelegate.state {
+                    BrowserWindowController.shared.show(state: state)
+                }
+                NotificationCenter.default.post(name: .mnOpenSession, object: folder)
+            }
+        }
+        completionHandler()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
         if let state = Self.state { BrowserWindowController.shared.show(state: state) }

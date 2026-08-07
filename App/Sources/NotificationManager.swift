@@ -5,6 +5,20 @@ import UserNotifications
 // pending. Kept as static functions over UNUserNotificationCenter.current()
 // so AppState can call it without owning a notification-center instance.
 enum NotificationManager {
+    static func notifyClaudeNeedsYou(sessionName: String, folderPath: String) {
+        requestAuthorizationIfNeeded { granted in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Claude needs you"
+            content.body = "\"\(sessionName)\" is waiting for your answer."
+            content.sound = .default
+            content.userInfo = ["sessionFolder": folderPath]
+            let request = UNNotificationRequest(identifier: "claude-attention-\(folderPath)",
+                                                content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
+        }
+    }
+
     static let reminderIdentifier = "com.noamchuri.MeetingNotes.morningReminder"
 
     // Pure text builder — the only part of this file worth unit-testing
