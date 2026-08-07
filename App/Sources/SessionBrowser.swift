@@ -6,7 +6,6 @@ struct SessionBrowser: View {
     @Bindable var state: AppState
     @State private var selected: URL?
     @State private var searchText = ""
-    @State private var statusFilter: StatusFilter = .all
     @State private var selectedCategory: String?
     @State private var showAddNotePopover = false
     @State private var addNoteText = ""
@@ -30,11 +29,6 @@ struct SessionBrowser: View {
     @State private var claudeTabFolders: Set<URL> = []
     @State private var terminalRevision = 0
 
-    enum StatusFilter: String, CaseIterable, Identifiable {
-        case all = "All", pending = "Pending"
-        var id: String { rawValue }
-    }
-
     private struct SessionDeleteTarget: Identifiable {
         let id: URL
         let name: String
@@ -57,17 +51,6 @@ struct SessionBrowser: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search notes")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Status", selection: $statusFilter) {
-                    ForEach(StatusFilter.allCases) { filter in
-                        Text(filter.rawValue).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
-            }
-        }
         .confirmationDialog(
             "Move '\(sessionDeleteTarget?.name ?? "")' to Trash? Claude-created Trello cards are unaffected.",
             isPresented: Binding(
@@ -629,12 +612,11 @@ struct SessionBrowser: View {
         var id: String { category }
     }
 
-    // Counts respect search + status filters (not the category selection
-    // itself), so chip counts reflect the current context.
+    // Counts respect the search filter (not the category selection itself),
+    // so chip counts reflect the current context.
     private func categoriesWithCounts(for session: Session) -> [CategoryCount] {
         let contextNotes = session.notes.filter {
-            (searchText.isEmpty || $0.text.localizedCaseInsensitiveContains(searchText)) &&
-            (statusFilter == .all || $0.status == .pending)
+            searchText.isEmpty || $0.text.localizedCaseInsensitiveContains(searchText)
         }
         let present = Set(contextNotes.map(\.category))
         let ordered = state.settings.categories.filter { present.contains($0) }
@@ -674,7 +656,6 @@ struct SessionBrowser: View {
     private func filteredNotes(session: Session) -> [Note] {
         session.notes.filter { note in
             (searchText.isEmpty || note.text.localizedCaseInsensitiveContains(searchText)) &&
-            (statusFilter == .all || note.status == .pending) &&
             (selectedCategory == nil || note.category == selectedCategory)
         }
         // Pending notes first (they still need attention); chronological within
@@ -748,14 +729,16 @@ struct SessionBrowser: View {
                     .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
             }
             if let imageName = note.image,
-               let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)) {
+               let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)),
+               nsImage.size.height > 0 {
+                let thumbHeight = min(150, nsImage.size.height)
                 Image(nsImage: nsImage)
                     .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 150)
+                    .aspectRatio(nsImage.size.width / nsImage.size.height, contentMode: .fit)
+                    .frame(height: thumbHeight)
+                    .fixedSize()
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         PreviewWindowController.shared.show(image: nsImage)
@@ -767,7 +750,9 @@ struct SessionBrowser: View {
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.background.secondary)
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.45), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.035)))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
         )
 
         .contextMenu { noteContextMenu(note, folder: folder) }
