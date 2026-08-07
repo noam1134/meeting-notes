@@ -22,6 +22,9 @@ struct SessionBrowser: View {
     @State private var editingFolder: URL?
     @State private var editorHovered = false
     @State private var outsideClickMonitor: Any?
+    @State private var headerRenameFolder: URL?
+    @State private var headerRenameText = ""
+    @FocusState private var headerRenameFocused: Bool
     @AppStorage("sidebarPendingExpanded") private var pendingExpanded = true
     @AppStorage("sidebarProcessedExpanded") private var processedExpanded = true
     @State private var claudeTabFolders: Set<URL> = []
@@ -286,6 +289,14 @@ struct SessionBrowser: View {
         renameFieldFocus = folder
     }
 
+    private func commitHeaderRename(folder: URL) {
+        guard headerRenameFolder == folder else { return }
+        let trimmed = headerRenameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        headerRenameFolder = nil
+        guard !trimmed.isEmpty else { return }
+        state.renameSession(in: folder, to: trimmed)
+    }
+
     private func commitRename(folder: URL) {
         guard renamingFolder == folder else { return }
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -477,7 +488,24 @@ struct SessionBrowser: View {
     private func header(session: Session, folder: URL) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.name).font(.title2.bold())
+                if headerRenameFolder == folder {
+                    TextField("Session name", text: $headerRenameText)
+                        .textFieldStyle(.plain)
+                        .font(.title2.bold())
+                        .focused($headerRenameFocused)
+                        .onHover { editorHovered = $0 }
+                        .onSubmit { commitHeaderRename(folder: folder) }
+                        .onExitCommand { headerRenameFolder = nil }
+                        .onAppear { headerRenameFocused = true }
+                } else {
+                    Text(session.name)
+                        .font(.title2.bold())
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            headerRenameText = session.name
+                            headerRenameFolder = folder
+                        })
+                        .help("Double-click to rename")
+                }
                 Text(timeRangeString(session))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -782,7 +810,7 @@ struct SessionBrowser: View {
     private func installOutsideClickMonitor() {
         guard outsideClickMonitor == nil else { return }
         outsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { event in
-            guard editingNoteID != nil || renamingFolder != nil,
+            guard editingNoteID != nil || renamingFolder != nil || headerRenameFolder != nil,
                   let window = event.window, window.title == "Sessions" else { return event }
             if event.type == .keyDown {
                 // Esc cancels the active inline edit no matter where focus wandered
@@ -791,6 +819,7 @@ struct SessionBrowser: View {
                 DispatchQueue.main.async {
                     editingNoteID = nil
                     renamingFolder = nil
+                    headerRenameFolder = nil
                 }
                 return nil
             }
@@ -807,6 +836,7 @@ struct SessionBrowser: View {
             }
             DispatchQueue.main.async {
                 if let folder = renamingFolder { commitRename(folder: folder) }
+                if let folder = headerRenameFolder { commitHeaderRename(folder: folder) }
                 if let id = editingNoteID, let folder = editingFolder {
                     saveEditNote(id: id, folder: folder)
                 }
