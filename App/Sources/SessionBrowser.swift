@@ -671,12 +671,12 @@ struct SessionBrowser: View {
                         .background(color, in: Capsule())
                         .foregroundStyle(.white)
                 }
-                Image(systemName: note.image != nil ? "photo" : "text.alignleft")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(timeString(note.timestamp))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Image(systemName: note.image != nil ? "photo" : "text.alignleft")
+                    Text(timeString(note.timestamp))
+                }
+                .font(.caption)
+                .foregroundStyle(.tertiary)
                 Spacer()
                 if let trelloURLString = note.trello, let trelloURL = URL(string: trelloURLString) {
                     Button {
@@ -684,16 +684,25 @@ struct SessionBrowser: View {
                     } label: {
                         Label("Trello", systemImage: "arrow.up.right")
                             .font(.caption2.bold())
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.blue, in: Capsule())
+                            .padding(.horizontal, 7).padding(.vertical, 2.5)
+                            .background(Color.blue.opacity(0.85), in: Capsule())
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                 }
                 if note.status == .processed {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green.opacity(0.85))
                 } else {
-                    Text("pending").font(.caption).foregroundStyle(.orange)
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock")
+                        Text("Pending")
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 7).padding(.vertical, 2.5)
+                    .background(.orange.opacity(0.14), in: Capsule())
                 }
             }
             if isEditing {
@@ -707,7 +716,9 @@ struct SessionBrowser: View {
                     .foregroundStyle(.secondary)
             } else {
                 Text(note.text)
-                    .font(.system(size: 16))
+                    .font(.system(size: 15))
+                    .lineSpacing(3)
+                    .foregroundStyle(.primary)
                     .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
             }
             if let imageName = note.image,
@@ -715,16 +726,23 @@ struct SessionBrowser: View {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxHeight: 160)
+                    .frame(maxHeight: 150)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         PreviewWindowController.shared.show(image: nsImage)
                     }
             }
         }
-        .padding(12)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.background.secondary)
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.45), lineWidth: 1))
+        )
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
     }
