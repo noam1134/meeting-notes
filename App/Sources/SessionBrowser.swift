@@ -361,8 +361,15 @@ struct SessionBrowser: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 HStack {
                     if manager.isRunning(folder) {
-                        Label("Claude is working", systemImage: "circle.fill")
-                            .font(.caption).foregroundStyle(.green)
+                        if manager.isAwaitingInput(folder) {
+                            Label("Claude is waiting for your answer — type in the terminal",
+                                  systemImage: "bell.fill")
+                                .font(.caption.bold()).foregroundStyle(.orange)
+                        } else {
+                            ProgressView().controlSize(.small)
+                            Text("Claude is working…")
+                                .font(.caption).foregroundStyle(.green)
+                        }
                         Spacer()
                         Button("Stop", role: .destructive) { confirmStopClaude(folder: folder) }
                     } else {

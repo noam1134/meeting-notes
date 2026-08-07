@@ -20,6 +20,7 @@ final class ClaudeTerminalManager {
         /// Claude Code broadcasts its state through terminal titles: a braille
         /// spinner (U+2800…U+28FF) while working, "✳" when idle awaiting input.
         var wasBusy = false
+        var awaitingInput = false
         init(view: LocalProcessTerminalView, delegate: RunDelegate, sessionName: String) {
             self.view = view
             self.delegate = delegate
@@ -37,6 +38,7 @@ final class ClaudeTerminalManager {
     func terminal(for folder: URL) -> LocalProcessTerminalView? { runs[folder]?.view }
     func hasRun(_ folder: URL) -> Bool { runs[folder] != nil }
     func isRunning(_ folder: URL) -> Bool { runs[folder]?.running ?? false }
+    func isAwaitingInput(_ folder: URL) -> Bool { runs[folder]?.awaitingInput ?? false }
 
     /// Starts `claude` for the session (no-op if already running — the caller
     /// just switches to the Claude tab). Returns `false` only when the `claude`
@@ -105,11 +107,19 @@ final class ClaudeTerminalManager {
 
     fileprivate func titleChanged(folder: URL, title: String) {
         guard let run = runs[folder], run.running else { return }
+        try? "\(Date()) [\(folder.lastPathComponent)] \(title)\n"
+            .appendingToFile("/tmp/mn-titles.log")
         let busy = title.unicodeScalars.first.map { (0x2800...0x28FF).contains(Int($0.value)) } ?? false
         if busy {
             run.wasBusy = true
+            if run.awaitingInput {
+                run.awaitingInput = false
+                onChange?()
+            }
         } else if run.wasBusy, title.hasPrefix("\u{2733}") {   // ✳ idle marker
             run.wasBusy = false
+            run.awaitingInput = true
+            onChange?()
             onNeedsAttention?(folder, run.sessionName)
         }
     }
@@ -241,6 +251,20 @@ struct TerminalHostView: NSViewRepresentable {
         container.needsLayout = true
         DispatchQueue.main.async {
             container.window?.makeFirstResponder(terminal)
+        }
+    }
+}
+
+
+private extension String {
+    /// Temporary instrumentation sink for terminal-title transitions.
+    func appendingToFile(_ path: String) throws {
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(utf8))
+            handle.closeFile()
+        } else {
+            try write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 }
