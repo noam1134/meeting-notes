@@ -22,6 +22,8 @@ struct SessionBrowser: View {
     @State private var editingFolder: URL?
     @State private var editorHovered = false
     @State private var outsideClickMonitor: Any?
+    @AppStorage("sidebarPendingExpanded") private var pendingExpanded = true
+    @AppStorage("sidebarProcessedExpanded") private var processedExpanded = true
     @State private var claudeTabFolders: Set<URL> = []
     @State private var terminalRevision = 0
 
@@ -137,12 +139,19 @@ struct SessionBrowser: View {
                 emptySidebarPlaceholder
             } else {
                 List(selection: $selected) {
-                    ForEach(groupedSections, id: \.title) { group in
-                        Section(group.title) {
-                            ForEach(group.rows) { row in
-                                sidebarRow(row.session, folder: row.id).tag(row.id)
-                            }
+                    Section(isExpanded: $pendingExpanded) {
+                        ForEach(pendingRows) { row in
+                            sidebarRow(row.session, folder: row.id).tag(row.id)
                         }
+                    } header: {
+                        Text("Pending\(pendingRows.isEmpty ? "" : " · \(pendingRows.count)")")
+                    }
+                    Section(isExpanded: $processedExpanded) {
+                        ForEach(processedRows) { row in
+                            sidebarRow(row.session, folder: row.id).tag(row.id)
+                        }
+                    } header: {
+                        Text("Processed\(processedRows.isEmpty ? "" : " · \(processedRows.count)")")
                     }
                     if !unreadableRows.isEmpty {
                         Section("Unreadable") {
@@ -152,6 +161,7 @@ struct SessionBrowser: View {
                         }
                     }
                 }
+                .listStyle(.sidebar)
             }
         }
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
@@ -213,7 +223,7 @@ struct SessionBrowser: View {
                 } else {
                     Text(session.name).lineLimit(1)
                 }
-                Text("\(timeString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
+                Text("\(rowDateString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !categoryDots.isEmpty {
@@ -315,8 +325,6 @@ struct SessionBrowser: View {
         let id: URL
         var folder: URL { id }
     }
-    private struct SidebarSection { let title: String; let rows: [SessionRow] }
-
     private var unreadableRows: [UnreadableRow] {
         state.sessions.compactMap { item in
             if case let .unreadable(folder) = item { return UnreadableRow(id: folder) }
@@ -324,24 +332,31 @@ struct SessionBrowser: View {
         }
     }
 
-    private var groupedSections: [SidebarSection] {
-        let readable = state.sessions.compactMap { item -> SessionRow? in
+    private var readableRows: [SessionRow] {
+        state.sessions.compactMap { item -> SessionRow? in
             if case let .readable(session, folder) = item { return SessionRow(id: folder, session: session) }
             return nil
         }
-        let groups = Dictionary(grouping: readable) { dayLabel(for: $0.session.startedAt) }
-        let orderedKeys = groups.keys.sorted { key1, key2 in
-            let d1 = groups[key1]!.map(\.session.startedAt).max() ?? .distantPast
-            let d2 = groups[key2]!.map(\.session.startedAt).max() ?? .distantPast
-            return d1 > d2
+        .sorted { a, b in
+            if a.session.isActive != b.session.isActive { return a.session.isActive }
+            return a.session.startedAt > b.session.startedAt
         }
-        return orderedKeys.map { key in
-            let rows = groups[key]!.sorted { a, b in
-                if a.session.isActive != b.session.isActive { return a.session.isActive }
-                return a.session.startedAt > b.session.startedAt
-            }
-            return SidebarSection(title: key, rows: rows)
-        }
+    }
+
+    /// Sessions move between these two lists automatically: any status change
+    /// (Claude's edits included, via the FSEvents watcher) re-derives them.
+    private var pendingRows: [SessionRow] { readableRows.filter { $0.session.status != .processed } }
+    private var processedRows: [SessionRow] { readableRows.filter { $0.session.status == .processed } }
+
+    /// "14:03" today, "Yesterday 21:51", "5 Aug 10:17" — the status lists mix
+    /// days, so rows carry their own date context.
+    private func rowDateString(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return timeString(date) }
+        if cal.isDateInYesterday(date) { return "Yesterday \(timeString(date))" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMM"
+        return "\(f.string(from: date)) \(timeString(date))"
     }
 
     private func dayLabel(for date: Date) -> String {
@@ -633,6 +648,14 @@ struct SessionBrowser: View {
             (searchText.isEmpty || note.text.localizedCaseInsensitiveContains(searchText)) &&
             (statusFilter == .all || note.status == .pending) &&
             (selectedCategory == nil || note.category == selectedCategory)
+        }
+        // Pending notes first (they still need attention); chronological within
+        // each group.
+        .sorted { a, b in
+            if (a.status == .pending) != (b.status == .pending) {
+                return a.status == .pending
+            }
+            return a.timestamp < b.timestamp
         }
     }
 
