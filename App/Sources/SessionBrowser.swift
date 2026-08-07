@@ -666,10 +666,8 @@ struct SessionBrowser: View {
             HStack {
                 if !isEditing {
                     Text(note.category)
-                        .font(.caption.bold())
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(color, in: Capsule())
-                        .foregroundStyle(.white)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(color.opacity(0.95))
                 }
                 HStack(spacing: 4) {
                     Image(systemName: note.image != nil ? "photo" : "text.alignleft")
@@ -743,6 +741,12 @@ struct SessionBrowser: View {
                 .fill(.background.secondary)
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator.opacity(0.45), lineWidth: 1))
         )
+        // Category color as a quiet left accent stripe instead of a bold chip.
+        .overlay(alignment: .leading) {
+            UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12)
+                .fill(color.opacity(0.8))
+                .frame(width: 3)
+        }
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
     }
