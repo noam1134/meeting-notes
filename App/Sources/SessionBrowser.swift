@@ -721,28 +721,18 @@ struct SessionBrowser: View {
                 Text("⏎ save · esc cancel")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                noteThumbnail(note, folder: folder)
             } else {
-                Text(note.text)
-                    .font(.system(size: 15))
-                    .lineSpacing(3)
-                    .foregroundStyle(.primary)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
-            }
-            if let imageName = note.image,
-               let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)),
-               nsImage.size.height > 0 {
-                let thumbHeight = min(150, nsImage.size.height)
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(nsImage.size.width / nsImage.size.height, contentMode: .fit)
-                    .frame(height: thumbHeight)
-                    .fixedSize()
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        PreviewWindowController.shared.show(image: nsImage)
-                    }
+                // Two columns: text left, screenshot right.
+                HStack(alignment: .top, spacing: 14) {
+                    Text(note.text)
+                        .font(.system(size: 15))
+                        .lineSpacing(3)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
+                    noteThumbnail(note, folder: folder)
+                }
             }
         }
         .padding(14)
@@ -757,6 +747,25 @@ struct SessionBrowser: View {
 
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
+    }
+
+    @ViewBuilder
+    private func noteThumbnail(_ note: Note, folder: URL) -> some View {
+        if let imageName = note.image,
+           let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)),
+           nsImage.size.height > 0 {
+            let aspect = nsImage.size.width / nsImage.size.height
+            let width = min(140 * aspect, 380)
+            Image(nsImage: nsImage)
+                .resizable()
+                .frame(width: width, height: width / aspect)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    PreviewWindowController.shared.show(image: nsImage)
+                }
+        }
     }
 
     @ViewBuilder
