@@ -134,9 +134,7 @@ struct SessionBrowser: View {
     private var sidebar: some View {
         Group {
             if state.sessions.isEmpty {
-                ContentUnavailableView(
-                    "No meetings yet — press ⌃⇧N or ⌃⇧S during your next meeting",
-                    systemImage: "mic.slash")
+                emptySidebarPlaceholder
             } else {
                 List(selection: $selected) {
                     ForEach(groupedSections, id: \.title) { group in
@@ -157,6 +155,37 @@ struct SessionBrowser: View {
             }
         }
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
+    }
+
+    private var emptySidebarPlaceholder: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "note.text")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+            Text("No meetings yet")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 5) {
+                shortcutHint("⌃⇧N", "quick note")
+                shortcutHint("⌃⇧S", "screenshot")
+            }
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func shortcutHint(_ keys: String, _ label: String) -> some View {
+        HStack(spacing: 6) {
+            Text(keys)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private func sidebarRow(_ session: Session, folder: URL) -> some View {
