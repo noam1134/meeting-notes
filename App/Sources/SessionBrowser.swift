@@ -130,14 +130,14 @@ struct SessionBrowser: View {
                             sidebarRow(row.session, folder: row.id).tag(row.id)
                         }
                     } header: {
-                        Text("Pending\(pendingRows.isEmpty ? "" : " · \(pendingRows.count)")")
+                        sectionHeader("Pending", count: pendingRows.count, expanded: $pendingExpanded)
                     }
                     Section(isExpanded: $processedExpanded) {
                         ForEach(processedRows) { row in
                             sidebarRow(row.session, folder: row.id).tag(row.id)
                         }
                     } header: {
-                        Text("Processed\(processedRows.isEmpty ? "" : " · \(processedRows.count)")")
+                        sectionHeader("Processed", count: processedRows.count, expanded: $processedExpanded)
                     }
                     if !unreadableRows.isEmpty {
                         Section("Unreadable") {
@@ -151,6 +151,19 @@ struct SessionBrowser: View {
             }
         }
         .navigationSplitViewColumnWidth(min: 240, ideal: 280)
+    }
+
+    /// Whole-row toggle: clicking anywhere in the header (not just the
+    /// disclosure arrow) expands/collapses the section.
+    private func sectionHeader(_ title: String, count: Int, expanded: Binding<Bool>) -> some View {
+        HStack(spacing: 0) {
+            Text(count == 0 ? title : "\(title) · \(count)")
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.18)) { expanded.wrappedValue.toggle() }
+        }
     }
 
     private var emptySidebarPlaceholder: some View {
