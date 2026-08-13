@@ -196,6 +196,57 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent(n2.image!).path))
     }
 
+    // Deleting an image note used to shrink the "count + 1" counter, so the next
+    // capture handed out a filename another note was still using and overwrote it.
+    func testImageNameNotReusedAfterDeletingAnImageNote() throws {
+        let folder = try store.startSession(named: "a")
+        let one = Data([0x89, 0x50, 0x4E, 0x47, 0x01])
+        let two = Data([0x89, 0x50, 0x4E, 0x47, 0x02])
+        let three = Data([0x89, 0x50, 0x4E, 0x47, 0x03])
+        let four = Data([0x89, 0x50, 0x4E, 0x47, 0x04])
+
+        let n1 = try store.addNote(text: "one", category: "FYI", imageData: one, to: folder)
+        let n2 = try store.addNote(text: "two", category: "FYI", imageData: two, to: folder)
+        let n3 = try store.addNote(text: "three", category: "FYI", imageData: three, to: folder)
+        try store.deleteNote(id: n2.id, in: folder)
+        let n4 = try store.addNote(text: "four", category: "FYI", imageData: four, to: folder)
+
+        XCTAssertNotEqual(n4.image, n1.image)
+        XCTAssertNotEqual(n4.image, n3.image)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(n1.image!)), one)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(n3.image!)), three)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(n4.image!)), four)
+    }
+
+    // Claude (or any external edit) may clear a note's image without deleting the
+    // file; the orphan must still not be handed to the next note.
+    func testImageNameSkipsOrphanFileOnDisk() throws {
+        let folder = try store.startSession(named: "a")
+        let orphan = Data([0x89, 0x50, 0x4E, 0x47, 0x00])
+        try orphan.write(to: folder.appendingPathComponent("img-001.png"))
+
+        let note = try store.addNote(text: "one", category: "FYI",
+                                     imageData: Data([0x89, 0x50, 0x4E, 0x47, 0x01]), to: folder)
+
+        XCTAssertNotEqual(note.image, "img-001.png")
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("img-001.png")), orphan)
+    }
+
+    // Sessions written before the fix contain notes sharing one filename; deleting
+    // either must not take the surviving note's screenshot with it.
+    func testDeleteNoteKeepsImageStillReferencedByAnotherNote() throws {
+        let folder = try store.startSession(named: "a")
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        let n1 = try store.addNote(text: "one", category: "FYI", imageData: data, to: folder)
+        let n2 = try store.addNote(text: "two", category: "FYI", imageData: nil, to: folder)
+        try store.updateNote(id: n2.id, in: folder) { $0.image = n1.image }
+
+        try store.deleteNote(id: n1.id, in: folder)
+
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent(n1.image!).path))
+    }
+
     func testDeleteNoteUnknownIdThrowsNoteNotFound() throws {
         let folder = try store.startSession(named: "a")
         let unknown = UUID()
