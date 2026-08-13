@@ -4,6 +4,7 @@ import MeetingNotesCore
 struct CaptureNoteView: View {
     let image: CGImage
     let state: AppState
+    let destination: CaptureDestination
     let dismiss: () -> Void
 
     @State private var tool: AnnotationTool = .box
@@ -21,11 +22,18 @@ struct CaptureNoteView: View {
         return CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
     }
 
-    init(image: CGImage, state: AppState, dismiss: @escaping () -> Void) {
+    init(image: CGImage, state: AppState, destination: CaptureDestination = .newNote,
+         dismiss: @escaping () -> Void) {
         self.image = image
         self.state = state
+        self.destination = destination
         self.dismiss = dismiss
         _category = State(initialValue: state.settings.categories.first ?? "FYI")
+    }
+
+    private var isAttaching: Bool {
+        if case .existingNote = destination { return true }
+        return false
     }
 
     var body: some View {
@@ -55,7 +63,22 @@ struct CaptureNoteView: View {
 
             canvas
 
-            NoteComposer(text: $note, category: $category, categories: state.settings.categories, onSubmit: save)
+            // Attaching to a note that already exists: it has its text and
+            // category, so only the annotation step is left.
+            if isAttaching {
+                HStack {
+                    Text("⏎ attach · esc cancel")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Button("Cancel", action: dismiss)
+                    Button("Attach", action: save)
+                        .keyboardShortcut(.defaultAction)
+                }
+            } else {
+                NoteComposer(text: $note, category: $category,
+                             categories: state.settings.categories, onSubmit: save)
+            }
         }
         .padding(14)
         .frame(width: max(displaySize.width + 28, 480))
@@ -144,8 +167,13 @@ struct CaptureNoteView: View {
             state.lastError = "Failed to render annotated screenshot"
             return
         }
-        if state.activeSession == nil { state.startMeeting(named: nil) }
-        state.addNote(text: note, category: category, imageData: png)
+        switch destination {
+        case .newNote:
+            if state.activeSession == nil { state.startMeeting(named: nil) }
+            state.addNote(text: note, category: category, imageData: png)
+        case let .existingNote(id, folder):
+            state.attachImage(noteID: id, in: folder, imageData: png)
+        }
         dismiss()
     }
 

@@ -90,6 +90,14 @@ final class AppState {
         run { try self.store.updateNote(id: id, in: folder, mutate: mutate) }
     }
 
+    func attachImage(noteID: UUID, in folder: URL, imageData: Data) {
+        run { try self.store.attachImage(noteID: noteID, in: folder, imageData: imageData) }
+    }
+
+    func detachImage(noteID: UUID, in folder: URL, named name: String) {
+        run { try self.store.detachImage(noteID: noteID, in: folder, named: name) }
+    }
+
     func deleteNote(id: UUID, in folder: URL) {
         run { try self.store.deleteNote(id: id, in: folder) }
     }

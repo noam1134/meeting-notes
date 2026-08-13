@@ -151,6 +151,64 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(second.name, "old")
     }
 
+    // Shaped exactly like the sessions on disk when `images` was introduced:
+    // every note carries the singular `image` key, some of them null. Loading
+    // must preserve every reference, and the migrating write must not disturb
+    // the PNGs those references point at.
+    func testLegacySessionOnDiskLoadsAndMigratesWithoutLosingImages() throws {
+        let folder = rootURL().appendingPathComponent("2026-08-12-1414-legacy", isDirectory: false)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let legacy = """
+        {
+          "name" : "weekly meeting",
+          "startedAt" : "2026-08-12T11:14:00Z",
+          "endedAt" : "2026-08-12T13:00:00Z",
+          "status" : "pending",
+          "notes" : [
+            { "id" : "11111111-1111-1111-1111-111111111111", "timestamp" : "2026-08-12T11:47:00Z",
+              "category" : "Trello task", "text" : "modal closes on mouse-up outside",
+              "image" : "img-003.png", "status" : "pending", "trello" : null },
+            { "id" : "22222222-2222-2222-2222-222222222222", "timestamp" : "2026-08-12T12:02:24Z",
+              "category" : "FYI", "text" : "add type for the task entity",
+              "image" : null, "status" : "processed", "trello" : null },
+            { "id" : "33333333-3333-3333-3333-333333333333", "timestamp" : "2026-08-12T12:22:20Z",
+              "category" : "Trello task", "text" : "assignees should auto-update",
+              "image" : "img-008.png", "status" : "pending", "trello" : null }
+          ]
+        }
+        """
+        try Data(legacy.utf8).write(to: folder.appendingPathComponent("session.json"))
+        let three = Data([0x89, 0x03]), eight = Data([0x89, 0x08])
+        try three.write(to: folder.appendingPathComponent("img-003.png"))
+        try eight.write(to: folder.appendingPathComponent("img-008.png"))
+
+        let loaded = try store.loadSession(in: folder)
+        XCTAssertEqual(loaded.notes.map(\.images),
+                       [["img-003.png"], [], ["img-008.png"]])
+
+        // Any write migrates the file; the new capture must not land on a name
+        // the legacy notes still hold.
+        let added = try store.addNote(text: "new", category: "FYI",
+                                      imageData: Data([0x89, 0x99]), to: folder)
+        XCTAssertFalse(["img-003.png", "img-008.png"].contains(added.images[0]))
+
+        let migrated = try store.loadSession(in: folder)
+        XCTAssertEqual(migrated.notes.map(\.images),
+                       [["img-003.png"], [], ["img-008.png"], added.images])
+        XCTAssertEqual(migrated.notes.map(\.text).prefix(3),
+                       ["modal closes on mouse-up outside", "add type for the task entity",
+                        "assignees should auto-update"])
+        XCTAssertEqual(migrated.notes[1].status, .processed)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("img-003.png")), three)
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("img-008.png")), eight)
+
+        let json = try String(contentsOf: folder.appendingPathComponent("session.json"), encoding: .utf8)
+        XCTAssertTrue(json.contains("\"images\""))
+        XCTAssertFalse(json.contains("\"image\" :"))
+    }
+
+    private func rootURL() -> URL { root }
+
     // MARK: - updateNote
 
     func testUpdateNoteEditsTextCategoryStatusOfRightNoteOnly() throws {

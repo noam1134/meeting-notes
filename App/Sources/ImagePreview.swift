@@ -23,11 +23,24 @@ import SwiftUI
 // instead, which duplicates none of the sizing math since it shares the
 // same static helpers as the instance's `containerSize`.
 struct ImagePreview: View {
-    let image: NSImage
+    let images: [NSImage]
     var dismiss: () -> Void
 
+    @State private var index: Int
     @State private var zoom: CGFloat = 1.0
     @State private var lastZoom: CGFloat = 1.0
+
+    init(images: [NSImage], startIndex: Int = 0, dismiss: @escaping () -> Void) {
+        self.images = images
+        self.dismiss = dismiss
+        _index = State(initialValue: min(max(startIndex, 0), max(images.count - 1, 0)))
+    }
+
+    // A note always has at least one image to preview; the empty fallback only
+    // guards against an image file that failed to load out from under us.
+    private var image: NSImage {
+        images.indices.contains(index) ? images[index] : NSImage(size: .zero)
+    }
 
     private let zoomRange: ClosedRange<CGFloat> = 0.25...4.0
     private let zoomStep: CGFloat = 0.25
@@ -147,6 +160,20 @@ struct ImagePreview: View {
 
             Spacer()
 
+            if images.count > 1 {
+                Button { page(by: -1) } label: { Image(systemName: "chevron.left") }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .disabled(index == 0)
+                Text("\(index + 1) of \(images.count)")
+                    .monospacedDigit()
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button { page(by: 1) } label: { Image(systemName: "chevron.right") }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .disabled(index == images.count - 1)
+                Spacer()
+            }
+
             Button(action: dismiss) {
                 Image(systemName: "xmark")
             }
@@ -154,6 +181,15 @@ struct ImagePreview: View {
             .keyboardShortcut(.cancelAction)
         }
         .padding(10)
+    }
+
+    // Each screenshot gets its own fitted size, so carrying zoom across a page
+    // would show the next one at an arbitrary magnification.
+    private func page(by delta: Int) {
+        let next = index + delta
+        guard images.indices.contains(next) else { return }
+        index = next
+        setZoom(1.0)
     }
 
     private func setZoom(_ value: CGFloat) {
