@@ -9,42 +9,49 @@ public struct Note: Codable, Identifiable, Equatable, Sendable {
     public let timestamp: Date
     public var category: String
     public var text: String
-    public var image: String?
+    public var images: [String]
     public var status: ProcessingStatus
     public var trello: String?
 
     public init(id: UUID, timestamp: Date, category: String, text: String,
-                image: String?, status: ProcessingStatus, trello: String?) {
+                images: [String], status: ProcessingStatus, trello: String?) {
         self.id = id
         self.timestamp = timestamp
         self.category = category
         self.text = text
-        self.image = image
+        self.images = images
         self.status = status
         self.trello = trello
     }
 
-    // Explicit init so old sessions (predating the trello field) still decode.
-    enum CodingKeys: String, CodingKey { case id, timestamp, category, text, image, status, trello }
+    // `image` is the pre-multi-screenshot spelling, decode-only: every session
+    // written before that change holds a single string (or null) under it.
+    // Explicit init also lets old sessions predating `trello` still decode.
+    enum CodingKeys: String, CodingKey { case id, timestamp, category, text, images, image, status, trello }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         timestamp = try c.decode(Date.self, forKey: .timestamp)
         category = try c.decode(String.self, forKey: .category)
         text = try c.decode(String.self, forKey: .text)
-        image = try c.decodeIfPresent(String.self, forKey: .image)
+        if let images = try c.decodeIfPresent([String].self, forKey: .images) {
+            self.images = images
+        } else {
+            self.images = try c.decodeIfPresent(String.self, forKey: .image).map { [$0] } ?? []
+        }
         status = try c.decode(ProcessingStatus.self, forKey: .status)
         trello = try c.decodeIfPresent(String.self, forKey: .trello)
     }
 
-    // Explicit encode so image/trello serialize as JSON null (Claude's contract shows the key).
+    // Explicit encode so trello serializes as JSON null (Claude's contract shows
+    // the key). `image` is never written: one source of truth for filenames.
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(timestamp, forKey: .timestamp)
         try c.encode(category, forKey: .category)
         try c.encode(text, forKey: .text)
-        try c.encode(image, forKey: .image)   // encodes null when nil
+        try c.encode(images, forKey: .images)
         try c.encode(status, forKey: .status)
         try c.encode(trello, forKey: .trello) // encodes null when nil
     }
