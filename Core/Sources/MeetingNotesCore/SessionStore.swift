@@ -144,9 +144,12 @@ public final class SessionStore {
         let note = session.notes.remove(at: index)
         // Sessions written before nextImageName() can have two notes sharing one
         // filename; only drop the file once nothing points at it any more.
+        // trashItem, not removeItem: a deleted screenshot is unrecoverable
+        // otherwise, and deleteSession already trashes rather than destroys.
         if let imageName = note.image,
            !session.notes.contains(where: { $0.image == imageName }) {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(imageName))
+            try? FileManager.default.trashItem(
+                at: folder.appendingPathComponent(imageName), resultingItemURL: nil)
         }
         try write(session, to: folder)
     }
