@@ -92,16 +92,12 @@ public final class SessionStore {
     public func addNote(text: String, category: String, imageData: Data?,
                         to folder: URL, at date: Date = Date()) throws -> Note {
         var session = try loadSession(in: folder)   // reload: tolerate external edits
-        var imageName: String?
+        var images: [String] = []
         if let imageData {
-            let name = nextImageName(in: folder, notes: session.notes)
-            // .withoutOverwriting: if the name were ever taken anyway, fail loudly
-            // rather than silently replacing another note's screenshot.
-            try imageData.write(to: folder.appendingPathComponent(name), options: .withoutOverwriting)
-            imageName = name
+            images = [try writeImage(imageData, in: folder, notes: session.notes)]
         }
         let note = Note(id: UUID(), timestamp: date, category: category,
-                        text: text, image: imageName, status: .pending, trello: nil)
+                        text: text, images: images, status: .pending, trello: nil)
         session.notes.append(note)
         try write(session, to: folder)
         // Reload so the returned Note matches disk exactly (JSON round-trip
@@ -115,7 +111,7 @@ public final class SessionStore {
     // images + 1) went backwards whenever an image note was deleted, so the next
     // capture reused a live filename and overwrote that note's screenshot.
     private func nextImageName(in folder: URL, notes: [Note]) -> String {
-        let claimed = Set(notes.compactMap(\.image))
+        let claimed = Set(notes.flatMap(\.images))
         var index = 1
         while true {
             let name = String(format: "img-%03d.png", index)
@@ -125,6 +121,47 @@ public final class SessionStore {
             }
             index += 1
         }
+    }
+
+    // .withoutOverwriting: if the name were ever taken anyway, fail loudly rather
+    // than silently replacing another note's screenshot.
+    private func writeImage(_ data: Data, in folder: URL, notes: [Note]) throws -> String {
+        let name = nextImageName(in: folder, notes: notes)
+        try data.write(to: folder.appendingPathComponent(name), options: .withoutOverwriting)
+        return name
+    }
+
+    /// Adds another screenshot to a note that already exists, returning its filename.
+    @discardableResult
+    public func attachImage(noteID: UUID, in folder: URL, imageData: Data) throws -> String {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        guard let index = session.notes.firstIndex(where: { $0.id == noteID }) else {
+            throw SessionStoreError.noteNotFound(noteID)
+        }
+        let name = try writeImage(imageData, in: folder, notes: session.notes)
+        session.notes[index].images.append(name)
+        try write(session, to: folder)
+        return name
+    }
+
+    public func detachImage(noteID: UUID, in folder: URL, named name: String) throws {
+        var session = try loadSession(in: folder)   // reload: tolerate external edits
+        guard let index = session.notes.firstIndex(where: { $0.id == noteID }) else {
+            throw SessionStoreError.noteNotFound(noteID)
+        }
+        session.notes[index].images.removeAll { $0 == name }
+        try write(session, to: folder)
+        trashImageIfUnreferenced(name, in: folder, notes: session.notes)
+    }
+
+    // Sessions written before nextImageName() can have two notes sharing one
+    // filename; only drop the file once nothing points at it any more. trashItem,
+    // not removeItem: a deleted screenshot is unrecoverable otherwise, and
+    // deleteSession already trashes rather than destroys.
+    private func trashImageIfUnreferenced(_ name: String, in folder: URL, notes: [Note]) {
+        guard !notes.contains(where: { $0.images.contains(name) }) else { return }
+        try? FileManager.default.trashItem(
+            at: folder.appendingPathComponent(name), resultingItemURL: nil)
     }
 
     public func updateNote(id: UUID, in folder: URL, mutate: (inout Note) -> Void) throws {
@@ -142,11 +179,8 @@ public final class SessionStore {
             throw SessionStoreError.noteNotFound(id)
         }
         let note = session.notes.remove(at: index)
-        // Sessions written before nextImageName() can have two notes sharing one
-        // filename; only drop the file once nothing points at it any more.
-        if let imageName = note.image,
-           !session.notes.contains(where: { $0.image == imageName }) {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(imageName))
+        for name in note.images {
+            trashImageIfUnreferenced(name, in: folder, notes: session.notes)
         }
         try write(session, to: folder)
     }

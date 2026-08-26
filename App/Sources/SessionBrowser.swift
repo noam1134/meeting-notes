@@ -20,12 +20,18 @@ struct SessionBrowser: View {
     @State private var noteDeleteTarget: NoteDeleteTarget?
     @State private var editingFolder: URL?
     @State private var editorHovered = false
+    // Notes the reader asked to see in full; long ones collapse by default.
+    @State private var expandedNotes: Set<UUID> = []
     @State private var outsideClickMonitor: Any?
+    @State private var headerTitleHovered = false
     @State private var headerRenameFolder: URL?
     @State private var headerRenameText = ""
     @FocusState private var headerRenameFocused: Bool
     @AppStorage("sidebarPendingExpanded") private var pendingExpanded = true
     @AppStorage("sidebarProcessedExpanded") private var processedExpanded = true
+    // Per note, the filename of the leftmost screenshot in its strip — the
+    // scroll anchor the chevrons write to and the swipe reports back.
+    @State private var stripAnchor: [UUID: String] = [:]
     @State private var claudeTabFolders: Set<URL> = []
     @State private var terminalRevision = 0
 
@@ -220,7 +226,15 @@ struct SessionBrowser: View {
                             }
                         }
                 } else {
-                    Text(session.name).lineLimit(1)
+                    Text(session.name)
+                        .lineLimit(1)
+                        .contentShape(Rectangle())
+                        // Single click belongs to the List's selection, so the
+                        // rename rides along as a simultaneous double-click.
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            startRename(session: session, folder: folder)
+                        })
+                        .help("Double-click to rename")
                 }
                 Text("\(rowDateString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
                     .font(.caption)
@@ -283,6 +297,13 @@ struct SessionBrowser: View {
         renameText = session.name
         renamingFolder = folder
         renameFieldFocus = folder
+    }
+
+    private func startHeaderRename(session: Session, folder: URL) {
+        editingNoteID = nil
+        renamingFolder = nil
+        headerRenameText = session.name
+        headerRenameFolder = folder
     }
 
     private func commitHeaderRename(folder: URL) {
@@ -496,11 +517,16 @@ struct SessionBrowser: View {
                 } else {
                     Text(session.name)
                         .font(.title2.bold())
-                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                            headerRenameText = session.name
-                            headerRenameFolder = folder
-                        })
-                        .help("Double-click to rename")
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 5)
+                            .fill(headerTitleHovered ? Color.primary.opacity(0.08) : Color.clear))
+                        .padding(.horizontal, -4)
+                        .padding(.vertical, -1)
+                        .contentShape(Rectangle())
+                        .onHover { headerTitleHovered = $0 }
+                        .onTapGesture { startHeaderRename(session: session, folder: folder) }
+                        .help("Click to rename")
                 }
                 Text(timeRangeString(session))
                     .font(.subheadline)
@@ -687,6 +713,13 @@ struct SessionBrowser: View {
         }
     }
 
+    private func expansionBinding(for id: UUID) -> Binding<Bool> {
+        Binding(get: { expandedNotes.contains(id) },
+                set: { expand in
+                    if expand { expandedNotes.insert(id) } else { expandedNotes.remove(id) }
+                })
+    }
+
     private func noteCard(_ note: Note, folder: URL) -> some View {
         let isEditing = editingNoteID == note.id
         let color = color(for: note.category)
@@ -698,7 +731,8 @@ struct SessionBrowser: View {
                         .foregroundStyle(color.opacity(0.95))
                 }
                 HStack(spacing: 4) {
-                    Image(systemName: note.image != nil ? "photo" : "text.alignleft")
+                    Image(systemName: note.images.isEmpty ? "text.alignleft" : "photo")
+                    if note.images.count > 1 { Text("\(note.images.count)") }
                     Text(timeString(note.timestamp))
                 }
                 .font(.caption)
@@ -731,33 +765,29 @@ struct SessionBrowser: View {
                     .background(.orange.opacity(0.14), in: Capsule())
                 }
             }
+            // Text takes the full width; screenshots sit in a centered strip
+            // beneath it, however many the note holds.
             if isEditing {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        NoteComposer(text: $editText, category: $editCategory,
-                                    categories: state.settings.categories,
-                                    onSubmit: { saveEditNote(id: note.id, folder: folder) },
-                                    chipsAboveField: true)
-                            .onHover { editorHovered = $0 }
-                        Text("⏎ save · esc cancel")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    noteThumbnail(note, folder: folder)
+                VStack(alignment: .leading, spacing: 6) {
+                    NoteComposer(text: $editText, category: $editCategory,
+                                categories: state.settings.categories,
+                                onSubmit: { saveEditNote(id: note.id, folder: folder) },
+                                chipsAboveField: true,
+                                // Grow to the full note: an edited card must not
+                                // collapse to a fraction of what it just showed.
+                                maxLines: nil,
+                                onCancel: { editingNoteID = nil })
+                        .onHover { editorHovered = $0 }
+                    Text("⏎ save · esc cancel")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                // Two columns: text left, screenshot right.
-                HStack(alignment: .top, spacing: 14) {
-                    Text(note.text)
-                        .font(.system(size: 15))
-                        .lineSpacing(3)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
-                    noteThumbnail(note, folder: folder)
-                }
+                ExpandableNoteText(text: note.text,
+                                   isExpanded: expansionBinding(for: note.id))
             }
+            noteThumbnailStrip(note, folder: folder)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -771,27 +801,141 @@ struct SessionBrowser: View {
                 .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
         )
 
+        // The whole card is the expand/collapse hit target — the "Show N more
+        // lines" button is an affordance, not the only way in. Buttons and the
+        // screenshot strip inside the card win the click over this gesture.
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture(count: 2) {
+            if !isEditing { startEditingNote(note, folder: folder) }
+        }
+        .onTapGesture {
+            guard !isEditing else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                expansionBinding(for: note.id).wrappedValue.toggle()
+            }
+        }
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
     }
 
-    @ViewBuilder
-    private func noteThumbnail(_ note: Note, folder: URL) -> some View {
-        if let imageName = note.image,
-           let nsImage = NSImage(contentsOf: folder.appendingPathComponent(imageName)),
-           nsImage.size.height > 0 {
-            let aspect = nsImage.size.width / nsImage.size.height
-            let width = min(140 * aspect, 380)
-            Image(nsImage: nsImage)
-                .resizable()
-                .frame(width: width, height: width / aspect)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    PreviewWindowController.shared.show(image: nsImage)
-                }
+    // MARK: - Screenshot strip
+
+    private struct LoadedShot: Identifiable {
+        let name: String
+        let image: NSImage
+        var id: String { name }
+    }
+
+    private static let thumbSlot = CGSize(width: 168, height: 104)
+    private static let thumbGap: CGFloat = 8
+    private static let shotsPerPage = 3
+
+    // Uniform slots rather than aspect-sized ones: it keeps the viewport width
+    // (and so the paging maths) independent of what was captured.
+    private static func stripViewportWidth(count: Int) -> CGFloat {
+        let visible = CGFloat(min(count, shotsPerPage))
+        return visible * thumbSlot.width + max(visible - 1, 0) * thumbGap
+    }
+
+    private func loadedShots(_ note: Note, folder: URL) -> [LoadedShot] {
+        note.images.compactMap { name in
+            guard let image = NSImage(contentsOf: folder.appendingPathComponent(name)),
+                  image.size.height > 0 else { return nil }   // ref without a readable file
+            return LoadedShot(name: name, image: image)
         }
+    }
+
+    @ViewBuilder
+    private func noteThumbnailStrip(_ note: Note, folder: URL) -> some View {
+        let shots = loadedShots(note, folder: folder)
+        if !shots.isEmpty {
+            let pageCount = Int(ceil(Double(shots.count) / Double(Self.shotsPerPage)))
+            let anchorIndex = shots.firstIndex { $0.name == stripAnchor[note.id] } ?? 0
+            let page = anchorIndex / Self.shotsPerPage
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    if pageCount > 1 {
+                        stripChevron("chevron.left", enabled: page > 0) {
+                            scrollStrip(note, shots: shots, toPage: page - 1)
+                        }
+                    }
+                    ScrollView(.horizontal) {
+                        LazyHStack(spacing: Self.thumbGap) {
+                            ForEach(shots) { shot in
+                                thumbnailSlot(shot, in: shots, note: note, folder: folder)
+                            }
+                        }
+                        .scrollTargetLayout()
+                    }
+                    .scrollIndicators(.never)
+                    .scrollTargetBehavior(.viewAligned)   // two-finger swipe settles on a shot
+                    .scrollPosition(id: Binding(
+                        get: { stripAnchor[note.id] ?? shots.first?.name },
+                        set: { stripAnchor[note.id] = $0 }))
+                    .frame(width: Self.stripViewportWidth(count: shots.count),
+                           height: Self.thumbSlot.height)
+                    if pageCount > 1 {
+                        stripChevron("chevron.right", enabled: page < pageCount - 1) {
+                            scrollStrip(note, shots: shots, toPage: page + 1)
+                        }
+                    }
+                }
+                if pageCount > 1 {
+                    HStack(spacing: 5) {
+                        ForEach(0..<pageCount, id: \.self) { index in
+                            Circle()
+                                .fill(Color.primary.opacity(index == page ? 0.55 : 0.18))
+                                .frame(width: 5, height: 5)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)   // centers the strip in the card
+            .padding(.top, 2)
+        }
+    }
+
+    private func scrollStrip(_ note: Note, shots: [LoadedShot], toPage page: Int) {
+        let target = min(max(page, 0) * Self.shotsPerPage, shots.count - 1)
+        withAnimation(.easeOut(duration: 0.22)) {
+            stripAnchor[note.id] = shots[target].name
+        }
+    }
+
+    private func stripChevron(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.caption.weight(.semibold))
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(Color.primary.opacity(0.07)))
+                .overlay(Circle().strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.25)
+    }
+
+    private func thumbnailSlot(_ shot: LoadedShot, in shots: [LoadedShot],
+                               note: Note, folder: URL) -> some View {
+        Image(nsImage: shot.image)
+            .resizable()
+            .scaledToFit()
+            .frame(width: Self.thumbSlot.width, height: Self.thumbSlot.height)
+            .background(Color.primary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator.opacity(0.6), lineWidth: 1))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                PreviewWindowController.shared.show(
+                    images: shots.map(\.image),
+                    startIndex: shots.firstIndex { $0.name == shot.name } ?? 0)
+            }
+            .contextMenu {
+                Button("Copy Screenshot") { copyScreenshot(named: shot.name, folder: folder) }
+                Button("Remove Screenshot", role: .destructive) {
+                    state.detachImage(noteID: note.id, in: folder, named: shot.name)
+                }
+            }
     }
 
     @ViewBuilder
@@ -808,9 +952,12 @@ struct SessionBrowser: View {
             pb.clearContents()
             pb.setString(note.text, forType: .string)
         }
-        if note.image != nil {
-            Button("Copy Screenshot") { copyScreenshot(note: note, folder: folder) }
+        Button("Add Screenshot…") {
+            CaptureController.begin(state: state,
+                                    destination: .existingNote(id: note.id, folder: folder))
         }
+        // Copy/Remove for a specific screenshot live on the thumbnail itself —
+        // ambiguous here once a note holds several.
         Divider()
         Button("Delete Note…", role: .destructive) {
             noteDeleteTarget = NoteDeleteTarget(id: note.id, folder: folder)
@@ -881,9 +1028,8 @@ struct SessionBrowser: View {
         editingNoteID = nil
     }
 
-    private func copyScreenshot(note: Note, folder: URL) {
-        guard let imageName = note.image,
-              let data = try? Data(contentsOf: folder.appendingPathComponent(imageName)) else { return }
+    private func copyScreenshot(named name: String, folder: URL) {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)) else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setData(data, forType: .png)

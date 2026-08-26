@@ -19,7 +19,8 @@ struct QuickNoteView: View {
                 Label("No active meeting — ⏎ starts one now", systemImage: "record.circle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            NoteComposer(text: $text, category: $category, categories: state.settings.categories, onSubmit: save)
+            NoteComposer(text: $text, category: $category, categories: state.settings.categories,
+                         onSubmit: save, onCancel: dismiss)
         }
         .padding(14)
         .frame(width: 480)

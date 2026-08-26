@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MeetingNotesCore
 
@@ -8,34 +9,32 @@ struct NoteComposer: View {
     let onSubmit: () -> Void
     var focusOnAppear = true
     var chipsAboveField = false
+    /// nil grows to fit the whole note instead of scrolling at a cap.
+    var maxLines: Int? = 6
+    var onCancel: (() -> Void)? = nil
     var onFocusLost: (() -> Void)? = nil
-    @FocusState private var focused: Bool
+
+    private static let editorFont = NSFont.preferredFont(forTextStyle: .title3)
+    @State private var editorHeight = NoteTextEditor.collapsedHeight(font: NoteComposer.editorFont)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if chipsAboveField { categoryChips }
-            TextField("Note…", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.title3)
-                .lineLimit(1...6)
-                .focused($focused)
-                .onSubmit(onSubmit)
-                .onChange(of: focused) { _, isFocused in
-                    if isFocused {
-                        // macOS selects all prefilled text when the field gains focus;
-                        // put the caret at the end so typing appends, not replaces.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                            if let editor = NSApp.keyWindow?.firstResponder as? NSTextView {
-                                editor.selectedRange = NSRange(location: (editor.string as NSString).length, length: 0)
-                            }
-                        }
-                    } else {
-                        onFocusLost?()
-                    }
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("Note…")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, NoteTextEditor.verticalInset)
+                        .allowsHitTesting(false)
                 }
+                NoteTextEditor(text: $text, height: $editorHeight, font: Self.editorFont,
+                               maxLines: maxLines, focusOnAppear: focusOnAppear, onSubmit: onSubmit,
+                               onCancel: onCancel, onFocusLost: onFocusLost)
+                    .frame(height: editorHeight)
+            }
             if !chipsAboveField { categoryChips }
         }
-        .onAppear { if focusOnAppear { focused = true } }
     }
 
     private var categoryChips: some View {

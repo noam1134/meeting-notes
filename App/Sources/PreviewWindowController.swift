@@ -6,7 +6,8 @@ final class PreviewWindowController {
     static let shared = PreviewWindowController()
     private var panel: NSPanel?
 
-    func show(image: NSImage) {
+    func show(images: [NSImage], startIndex: Int = 0) {
+        guard let first = images.first else { return }
         panel?.close()
         let p = AutoClosePanel(contentRect: .zero,
                                styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow],
@@ -19,10 +20,14 @@ final class PreviewWindowController {
         p.isMovableByWindowBackground = true
         p.isFloatingPanel = true
         p.isReleasedWhenClosed = false
-        let host = NSHostingController(rootView: ImagePreview(image: image) { [weak p] in p?.close() })
+        let host = NSHostingController(
+            rootView: ImagePreview(images: images, startIndex: startIndex) { [weak p] in p?.close() })
         host.safeAreaRegions = []
         p.contentViewController = host
-        p.setContentSize(ImagePreview.idealPanelSize(for: image))
+        // Sized for the screenshot you clicked; paging to a differently-shaped
+        // one refits inside the panel rather than resizing it under you.
+        let opening = images.indices.contains(startIndex) ? images[startIndex] : first
+        p.setContentSize(ImagePreview.idealPanelSize(for: opening))
         p.center()
         p.onClose = { [weak self] in self?.panel = nil }
         panel = p
