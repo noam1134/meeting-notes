@@ -77,7 +77,8 @@ struct CaptureNoteView: View {
                 }
             } else {
                 NoteComposer(text: $note, category: $category,
-                             categories: state.settings.categories, onSubmit: save)
+                             categories: state.settings.categories, onSubmit: save,
+                             onCancel: dismiss)
             }
         }
         .padding(14)
