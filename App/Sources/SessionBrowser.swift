@@ -20,7 +20,10 @@ struct SessionBrowser: View {
     @State private var noteDeleteTarget: NoteDeleteTarget?
     @State private var editingFolder: URL?
     @State private var editorHovered = false
+    // Notes the reader asked to see in full; long ones collapse by default.
+    @State private var expandedNotes: Set<UUID> = []
     @State private var outsideClickMonitor: Any?
+    @State private var headerTitleHovered = false
     @State private var headerRenameFolder: URL?
     @State private var headerRenameText = ""
     @FocusState private var headerRenameFocused: Bool
@@ -223,7 +226,15 @@ struct SessionBrowser: View {
                             }
                         }
                 } else {
-                    Text(session.name).lineLimit(1)
+                    Text(session.name)
+                        .lineLimit(1)
+                        .contentShape(Rectangle())
+                        // Single click belongs to the List's selection, so the
+                        // rename rides along as a simultaneous double-click.
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            startRename(session: session, folder: folder)
+                        })
+                        .help("Double-click to rename")
                 }
                 Text("\(rowDateString(session.startedAt)) · \(session.notes.count) note\(session.notes.count == 1 ? "" : "s")")
                     .font(.caption)
@@ -286,6 +297,13 @@ struct SessionBrowser: View {
         renameText = session.name
         renamingFolder = folder
         renameFieldFocus = folder
+    }
+
+    private func startHeaderRename(session: Session, folder: URL) {
+        editingNoteID = nil
+        renamingFolder = nil
+        headerRenameText = session.name
+        headerRenameFolder = folder
     }
 
     private func commitHeaderRename(folder: URL) {
@@ -499,11 +517,16 @@ struct SessionBrowser: View {
                 } else {
                     Text(session.name)
                         .font(.title2.bold())
-                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                            headerRenameText = session.name
-                            headerRenameFolder = folder
-                        })
-                        .help("Double-click to rename")
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 5)
+                            .fill(headerTitleHovered ? Color.primary.opacity(0.08) : Color.clear))
+                        .padding(.horizontal, -4)
+                        .padding(.vertical, -1)
+                        .contentShape(Rectangle())
+                        .onHover { headerTitleHovered = $0 }
+                        .onTapGesture { startHeaderRename(session: session, folder: folder) }
+                        .help("Click to rename")
                 }
                 Text(timeRangeString(session))
                     .font(.subheadline)
@@ -690,6 +713,13 @@ struct SessionBrowser: View {
         }
     }
 
+    private func expansionBinding(for id: UUID) -> Binding<Bool> {
+        Binding(get: { expandedNotes.contains(id) },
+                set: { expand in
+                    if expand { expandedNotes.insert(id) } else { expandedNotes.remove(id) }
+                })
+    }
+
     private func noteCard(_ note: Note, folder: URL) -> some View {
         let isEditing = editingNoteID == note.id
         let color = color(for: note.category)
@@ -742,7 +772,11 @@ struct SessionBrowser: View {
                     NoteComposer(text: $editText, category: $editCategory,
                                 categories: state.settings.categories,
                                 onSubmit: { saveEditNote(id: note.id, folder: folder) },
-                                chipsAboveField: true)
+                                chipsAboveField: true,
+                                // Grow to the full note: an edited card must not
+                                // collapse to a fraction of what it just showed.
+                                maxLines: nil,
+                                onCancel: { editingNoteID = nil })
                         .onHover { editorHovered = $0 }
                     Text("⏎ save · esc cancel")
                         .font(.caption2)
@@ -750,12 +784,8 @@ struct SessionBrowser: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(note.text)
-                    .font(.system(size: 15))
-                    .lineSpacing(3)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { startEditingNote(note, folder: folder) })
+                ExpandableNoteText(text: note.text,
+                                   isExpanded: expansionBinding(for: note.id))
             }
             noteThumbnailStrip(note, folder: folder)
         }
@@ -771,6 +801,19 @@ struct SessionBrowser: View {
                 .shadow(color: .black.opacity(0.12), radius: 1.5, y: 1)
         )
 
+        // The whole card is the expand/collapse hit target — the "Show N more
+        // lines" button is an affordance, not the only way in. Buttons and the
+        // screenshot strip inside the card win the click over this gesture.
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture(count: 2) {
+            if !isEditing { startEditingNote(note, folder: folder) }
+        }
+        .onTapGesture {
+            guard !isEditing else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                expansionBinding(for: note.id).wrappedValue.toggle()
+            }
+        }
         .contextMenu { noteContextMenu(note, folder: folder) }
         .onExitCommand { if isEditing { editingNoteID = nil } }
     }
