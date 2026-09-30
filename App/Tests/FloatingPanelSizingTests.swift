@@ -51,11 +51,34 @@ final class FloatingPanelSizingTests: XCTestCase {
         XCTAssertLessThan(height, box.height + 1)
     }
 
-    func testCapturePanelWithFractionalCanvasShows() throws {
+    private func makeState() -> AppState {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FloatingPanelSizingTests-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let state = AppState(store: SessionStore(rootURL: root))
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return AppState(store: SessionStore(rootURL: root))
+    }
+
+    private func firstSubview<T: NSView>(_ type: T.Type, in view: NSView?) -> T? {
+        guard let view else { return nil }
+        if let match = view as? T { return match }
+        return view.subviews.lazy.compactMap { self.firstSubview(type, in: $0) }.first
+    }
+
+    // Quick Note's editor sits under the panel's hidden titlebar; the scroll
+    // view's automatic insets pushed the text down and out of its box.
+    func testQuickNoteEditorTextIsNotInsetUnderTheHiddenTitlebar() throws {
+        let panel = FloatingPanel(view: QuickNoteView(state: makeState(), dismiss: {}), width: 480)
+        defer { panel.close() }
+        panel.show()
+        runDisplayCycles()
+
+        let scroll = try XCTUnwrap(firstSubview(NSScrollView.self, in: panel.contentView))
+        XCTAssertEqual(scroll.contentInsets.top, 0)
+        XCTAssertEqual(scroll.contentView.bounds.minY, 0)
+    }
+
+    func testCapturePanelWithFractionalCanvasShows() throws {
+        let state = makeState()
         // 1400×1200 fits the 640×400 canvas box as 466.67×400.
         let ctx = try XCTUnwrap(CGContext(data: nil, width: 1400, height: 1200, bitsPerComponent: 8,
                                           bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
