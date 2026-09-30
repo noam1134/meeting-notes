@@ -83,6 +83,9 @@ struct NoteTextEditor: NSViewRepresentable {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
+        // A floating panel's hidden titlebar still overlaps the editor, and
+        // AppKit would push the text down below it — clipping it in Quick Note.
+        scroll.automaticallyAdjustsContentInsets = false
 
         context.coordinator.textView = textView
         context.coordinator.scrollView = scroll
