@@ -14,7 +14,7 @@ final class FloatingPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         // Window auto-sizing tracks preferredContentSize through the contentViewController
         // mechanism — a bare NSHostingView contentView never resizes the panel.
-        let host = NSHostingController(rootView: view)
+        let host = NSHostingController(rootView: WholePointSize { view })
         host.sizingOptions = .preferredContentSize
         host.safeAreaRegions = []   // hidden titlebar must not inset the content
         contentViewController = host
@@ -33,5 +33,20 @@ final class FloatingPanel: NSPanel {
         let y = screen.frame.maxY - screen.frame.height * 0.25
         setFrameOrigin(NSPoint(x: x, y: y))
         makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Rounds the content's size up to whole points. The window frame is always
+/// whole points, so a fractional content size (a scaled screenshot, the note
+/// editor growing by line metrics) never matches it — on macOS 27 SwiftUI and
+/// AppKit then re-run constraints until AppKit throws and the app aborts.
+private struct WholePointSize: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(proposal) ?? .zero
+        return CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
     }
 }
