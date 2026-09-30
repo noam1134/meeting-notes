@@ -563,6 +563,9 @@ struct SessionBrowser: View {
             }
             .buttonStyle(AccentButtonStyle())
             .disabled(session.status == .processed)
+            .help(session.status == .processed
+                  ? "Already processed — mark it pending to run Claude again"
+                  : "Send this session's notes to Claude")
         }
         .padding()
     }
@@ -1071,44 +1074,56 @@ extension Notification.Name {
 /// Quiet pill button — subtle fill, hairline border, gentle hover.
 private struct SoftButtonStyle: ButtonStyle {
     var iconOnly = false
+    // A ButtonStyle draws the whole button, so .disabled() only stops the
+    // action — the muted look has to be read out of the environment here.
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let lit = hovering && isEnabled
+        return configuration.label
             .font(.system(size: 12, weight: .medium))
             .labelStyle(.titleAndIcon)
-            .foregroundStyle(.primary)
+            .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
             .padding(.horizontal, iconOnly ? 0 : 10)
             .padding(.vertical, iconOnly ? 0 : 5)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : (hovering ? 0.11 : 0.07)))
+                    .fill(Color.primary.opacity(isEnabled
+                                                ? (configuration.isPressed ? 0.16 : (lit ? 0.11 : 0.07))
+                                                : 0.04))
                     .overlay(RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.primary.opacity(0.09), lineWidth: 1))
+                        .strokeBorder(Color.primary.opacity(isEnabled ? 0.09 : 0.05), lineWidth: 1))
             )
             .contentShape(RoundedRectangle(cornerRadius: 7))
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
 
 /// Primary action pill — accent fill, white label.
 private struct AccentButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let lit = hovering && isEnabled
+        return configuration.label
             .font(.system(size: 12, weight: .semibold))
             .labelStyle(.titleAndIcon)
-            .foregroundStyle(.white)
+            .foregroundStyle(isEnabled ? Color.white : Color.primary.opacity(0.35))
             .padding(.horizontal, 11)
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(Color.accentColor.opacity(configuration.isPressed ? 0.75 : (hovering ? 1.0 : 0.9)))
+                    .fill(isEnabled
+                          ? Color.accentColor.opacity(configuration.isPressed ? 0.75 : (lit ? 1.0 : 0.9))
+                          : Color.primary.opacity(0.07))
+                    .overlay(RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.primary.opacity(isEnabled ? 0 : 0.06), lineWidth: 1))
             )
             .contentShape(RoundedRectangle(cornerRadius: 7))
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(.easeOut(duration: 0.12), value: lit)
     }
 }
