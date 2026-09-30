@@ -15,20 +15,20 @@ import MeetingNotesCore
 //
 // The tests run inside the app, so a regression takes the whole test host
 // down rather than failing an assertion.
+@Observable
+private final class Box {
+    var height: CGFloat = 40
+}
+
+private struct GrowingView: View {
+    let box: Box
+    var body: some View {
+        Rectangle().frame(width: 300, height: box.height)
+    }
+}
+
 @MainActor
 final class FloatingPanelSizingTests: XCTestCase {
-    @Observable
-    private final class Box {
-        var height: CGFloat = 40
-    }
-
-    private struct GrowingView: View {
-        let box: Box
-        var body: some View {
-            Rectangle().frame(width: 300, height: box.height)
-        }
-    }
-
     private func runDisplayCycles(for seconds: TimeInterval = 0.2) {
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
     }
